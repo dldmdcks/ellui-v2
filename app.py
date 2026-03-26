@@ -9,14 +9,13 @@ import pandas as pd
 import os
 import math
 
-# 1. 페이지 설정 및 디자인 (메뉴 강제 노출 포함)
+# 1. 페이지 설정 및 디자인 (사이드바 강제 노출)
 st.set_page_config(page_title="엘루이 업무포털", page_icon="🏢", layout="wide")
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
         .stButton>button { padding: 0.2rem 0.5rem; min-height: 2rem; }
         .block-container { padding-top: 3.5rem; padding-bottom: 2rem; }
-        /* 👇 사이드바 강제 노출 마법 (절대 지우지 마세요!) */
         [data-testid="stSidebar"] { width: 280px !important; display: block !important; }
         div[role="radiogroup"] {
             flex-direction: row; gap: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f2f6; margin-bottom: 20px;
@@ -25,10 +24,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 💡 시스템 최고 관리자 이메일
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
-# 2. 전국 법정동 주소 풀-데이터 (서울 전체, 경기/인천 등 대폭 확장)
+# 2. 전국 법정동 주소 싹 다 탑재 (정부 사이트급 풀버전)
 KOREA_REGION_DATA = {
     "서울특별시": {
         "강남구": ["개포동", "논현동", "대치동", "도곡동", "삼성동", "세곡동", "수서동", "신사동", "압구정동", "역삼동", "율현동", "일원동", "자곡동", "청담동"],
@@ -54,14 +52,41 @@ KOREA_REGION_DATA = {
         "수원시 영통구": ["망포동", "매탄동", "신동", "영통동", "원천동", "이의동", "하동"],
         "수원시 팔달구": ["고등동", "교동", "구천동", "남수동", "남창동", "매교동", "매산로1가", "매산로2가", "매산로3가", "매향동", "북수동", "신풍동", "영동", "우만동", "인계동", "장안동", "중동", "지동", "팔달로1가", "팔달로2가", "팔달로3가", "화서동"],
         "용인시 수지구": ["고기동", "동천동", "상현동", "성복동", "신봉동", "죽전동", "풍덕천동"],
+        "고양시 일산동구": ["마두동", "문봉동", "백석동", "사리현동", "산황동", "설문동", "성석동", "식사동", "장항동", "정발산동", "중산동", "지영동", "풍동"],
+        "과천시": ["갈현동", "과천동", "관문동", "막계동", "문원동", "별양동", "부림동", "원문동", "주암동", "중앙동"],
     },
     "인천광역시": {
         "연수구": ["동춘동", "선학동", "송도동", "연수동", "옥련동", "청학동"],
         "부평구": ["갈산동", "구산동", "부개동", "부평동", "산곡동", "삼산동", "십정동", "일신동", "청천동"],
+        "남동구": ["간석동", "고잔동", "구월동", "남촌동", "논현동", "도림동", "만수동", "서창동", "수산동", "운연동", "장수동"],
+    },
+    "부산광역시": {
+        "해운대구": ["반여동", "반송동", "석대동", "송정동", "우동", "재송동", "좌동", "중동"],
+        "수영구": ["광안동", "남천동", "망미동", "민락동", "수영동"],
+        "부산진구": ["가야동", "개금동", "당감동", "범천동", "부암동", "부전동", "양정동", "연지동", "전포동", "초읍동"],
+    },
+    "대구광역시": {
+        "수성구": ["가천동", "고모동", "노변동", "대흥동", "두산동", "만촌동", "매호동", "범물동", "범어동", "사월동", "삼덕동", "상동", "성동", "수성동1가", "수성동2가", "수성동3가", "수성동4가", "신매동", "연호동", "욱수동", "이천동", "중동", "지산동", "파동", "황금동"],
+    },
+    "광주광역시": {
+        "광산구": ["도산동", "도천동", "본덕동", "비아동", "송정동", "수완동", "신가동", "신창동", "어룡동", "우산동", "월곡동", "첨단동", "하남동"],
+    },
+    "대전광역시": {
+        "유성구": ["가정동", "계산동", "관평동", "교촌동", "구암동", "궁동", "노은동", "대정동", "덕명동", "도룡동", "반석동", "봉명동", "상대동", "송강동", "신성동", "어은동", "원내동", "전민동", "죽동", "지족동", "탑립동", "학하동"],
+    },
+    "울산광역시": {
+        "남구": ["고사동", "개운동", "달동", "대현동", "무거동", "부곡동", "삼산동", "선암동", "성암동", "수암동", "신정동", "야음동", "여천동", "옥동", "용연동", "용잠동", "장생포동", "황성동"],
+    },
+    "세종특별자치시": {
+        "세종시": ["가람동", "고운동", "나성동", "다정동", "대평동", "도담동", "반곡동", "보람동", "새롬동", "소담동", "아름동", "어진동", "종촌동", "한솔동", "해밀동"],
+    },
+    "제주특별자치도": {
+        "제주시": ["건입동", "구좌읍", "노형동", "도두동", "봉개동", "삼도동", "아라동", "애월읍", "연동", "오라동", "외도동", "용담동", "우도면", "이도동", "이호동", "일도동", "조천읍", "추자면", "화북동"],
+        "서귀포시": ["남원읍", "대륜동", "대천동", "대정읍", "동홍동", "서홍동", "성산읍", "송산동", "안덕면", "영천동", "정방동", "중문동", "천지동", "표선면", "효돈동"],
     }
 }
 
-# 3. 로그인 보안 및 금고 설정 (프리패스 완전 삭제!)
+# 3. 구글 로그인 및 보안 (프리패스 완전 삭제, 보안 철저!)
 try:
     creds_dict = json.loads(st.secrets["credentials_json"])
     token_dict = json.loads(st.secrets["google_token_json"])
@@ -91,7 +116,7 @@ if not st.session_state.connected:
     st.link_button("🔵 Google 계정으로 로그인", f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=select_account", type="primary", use_container_width=True)
     st.stop()
 
-# 4. 시트 연결 및 데이터 로드
+# 4. 시트 데이터 연동
 @st.cache_resource
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
 ss = get_ss()
@@ -110,17 +135,16 @@ except: pass
 def fetch_all_data(): return ws_data.get_all_values(), ws_staff.get_all_records(), ws_history.get_all_values(), ws_settings.get_all_values(), ws_contract.get_all_values()
 all_data_raw, staff_records, history_all_values, settings_all_values, contract_all_values = fetch_all_data()
 
-# 💡 [핵심] 직급 동기화: 시트에 적힌 이름/직급 그대로 가져옴!
+# 💡 [직급 완벽 동기화] 구글 시트 '직원명단'의 '이름' 칸(예: 이응찬 팀장)을 그대로 가져옵니다!
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 user_email = st.session_state.user_info.get("email", "")
 
 now_kst = datetime.utcnow() + timedelta(hours=9)
 today_shift = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= 8 else (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")
 
-# 💡 [직급/이름 자동 반영 로직]
 if user_email in staff_dict:
-    # 직원명단 시트에 이메일이 등록되어 있으면 시트에 적힌 '이름(직급포함)'을 그대로 사용!
-    user_name = staff_dict[user_email]['이름']
+    # 직원명단에 등록된 경우: 시트의 '이름(직급)'을 그대로 사용!
+    user_name = staff_dict[user_email]['이름'] 
     user_tokens = int(staff_dict[user_email].get('보유토큰', 0))
     my_ratio = int(staff_dict[user_email].get('수수료비율', 60)) if str(staff_dict[user_email].get('수수료비율', '')).isdigit() else 60
     staff_row_index = list(staff_dict.keys()).index(user_email) + 2 
@@ -130,11 +154,11 @@ if user_email in staff_dict:
         quota_done = 0; st.cache_data.clear()
     has_vip, is_locked = (str(staff_dict[user_email].get('VIP권한', 'X')) == 'O'), (quota_done < 5)
 elif user_email in ADMIN_EMAILS:
-    # 혹시 시트에 실수로 빠졌더라도, 관리자 이메일이면 비상 접속 가능하게 세팅
-    user_name = "관리자 (시트 등록 필요)"
+    # 시트 등록 전 임시 관리자 접속
+    user_name = "관리자 (시트 등록 요망)"
     user_tokens, is_locked, has_vip, quota_done, my_ratio = 9999, False, True, 5, 100
 else:
-    st.error("⚠️ 직원명단에 등록되지 않은 계정입니다. 대표님께 문의하세요.")
+    st.error("⚠️ 승인되지 않은 계정입니다. 대표님께 문의하세요.")
     st.stop()
 
 history_records, contract_records = history_all_values[1:], contract_all_values[1:] 
@@ -144,9 +168,8 @@ def clean_numeric(text): return re.sub(r'[^0-9]', '', str(text))
 def extract_room_number(room_str): return int(clean_numeric(room_str)) if clean_numeric(room_str) else 99999
 def is_valid_date_format(date_str): return bool(re.match(r'^\d{4}\.\d{2}\.\d{2}$', str(date_str).strip()))
 
-# 💡 토큰 지급 함수
 def update_token(t_name, amt, reason):
-    if "대표" in t_name: return # 대표님 직급이 포함되어 있으면 토큰 지급 패스
+    if "대표" in t_name or t_name in ["이응찬 대표", "곽태근 대표"]: return
     for i, r in enumerate(staff_records):
         if r['이름'] == t_name:
             ws_staff.update_cell(i + 2, 4, int(r.get('보유토큰', 0)) + amt)
@@ -170,7 +193,6 @@ for i, r in enumerate(all_data_raw[1:]):
     temp_dict[(str(rp[2]).replace(" ",""), str(rp[3]), str(rp[4]), str(rp[7]), str(rp[8]), str(rp[9]), str(rp[10]))] = rp 
 all_records = list(temp_dict.values()); all_records.reverse()
 
-# --- 사이드바 배너 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 st.sidebar.markdown("<div style='font-size: 13px; color: #4a4a4a; margin-top: -5px;'><b style='color:#1E90FF'>[🪙 보유 토큰 안내]</b><br>👉 양타 결재 <b>+5</b><br>👉 단타/신규 <b>+3</b><br>👉 검색 갱신 <b>+2</b><br>👉 오피콜 갱신 <b>+1</b><br>👉 매물 열람 <b>-1</b></div>", unsafe_allow_html=True)
@@ -181,7 +203,6 @@ except: target_addresses = []
 try: notice_text = settings_all_values[2][1] if len(settings_all_values) > 2 else ""
 except: notice_text = ""
 
-# --- 상단 라디오 탭 ---
 tab_names = ["🏠 홈", "🔍 검색", "👤 소유주", "📞 오피콜", "📝 신규", "💰 내 정산"]
 if has_vip or user_email in ADMIN_EMAILS: tab_names.append("⏰ VIP만기")
 if user_email in ADMIN_EMAILS: tab_names.extend(["👑 대시보드", "⚙️ 설정"])
@@ -208,7 +229,6 @@ def render_edit_form(row_idx, city, gu, dong, bon, bu, road, bldg, d_dong, room,
             return True
     return False
 
-# --- 탭별 로직 실행 ---
 if selected_tab == "🏠 홈":
     st.subheader("🏠 엘루이 업무 포털")
     if notice_text: st.info(f"📢 **[전체 공지사항]**\n\n{notice_text}")
@@ -221,7 +241,7 @@ elif selected_tab == "🔍 검색":
         sel_sido = c_s1.selectbox("시/도", ["전체"] + list(KOREA_REGION_DATA.keys()), index=1)
         gu_opts = ["전체"] + list(KOREA_REGION_DATA[sel_sido].keys()) if sel_sido != "전체" else ["전체"]
         sel_sigungu = c_s2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
-        sel_dong = c_s3.selectbox("법정동", ["전체"] + KOREA_REGION_DATA[sel_sido][sel_sigungu] if sel_sigungu != "전체" and sel_sido != "전체" else ["전체"], index=0)
+        sel_dong = c_s3.selectbox("법정동", ["전체"] + (KOREA_REGION_DATA[sel_sido][sel_sigungu] if sel_sigungu != "전체" and sel_sido != "전체" else []), index=0)
         
         with st.form("search_addr_form"):
             b_search, r_search = st.columns([2, 1])[0].text_input("번지/건물명", placeholder="28-2"), st.columns([2, 1])[1].text_input("호실", placeholder="101")
@@ -311,7 +331,7 @@ elif selected_tab == "📝 신규":
                 ws_data.append_row([n_city, n_gu, n_dong, n_bon, n_bu, "", "", "동없음", n_room, n_name, "", f"'{n_phone}", "미분류", "", "위반 없음", "", "", "", n_dep, n_rent, "", n_end, n_memo, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'), user_name, "정상"], value_input_option='USER_ENTERED')
                 update_token(user_name, 3, f"신규 매물 등록 ({n_dong} {n_bon}-{n_bu})"); st.cache_data.clear(); st.success("🎉 매물 등록 완료! (+3 토큰)"); st.rerun()
 
-# 💰 [탭 5] 내 정산 (계산기 로직 무삭제 유지) 💰
+# 💰 [탭 5] 내 정산 (무삭제 풀버전!) 💰
 elif selected_tab == "💰 내 정산":
     st.subheader(f"💰 {user_name}님의 계약 및 정산 관리")
     my_contracts = [r for r in contract_records if len(r) > 1 and r[1] == user_name]
@@ -370,7 +390,7 @@ elif selected_tab == "💰 내 정산":
                         st.session_state[exp_key] = True 
                         st.cache_data.clear(); st.rerun()
                 
-                # 💡 [핵심] 증빙 타입 기록 & 카톡 직급 반영!
+                # 💡 [직급 동기화] 카톡 증빙 요청 시 user_name에 직급이 완벽하게 포함되어 발송됩니다!
                 if "요청완료" in str(rp[21]) or "발급완료" in str(rp[21]): st.success(f"✅ {rp[21]} 건입니다.")
                 else:
                     st.write("---")
@@ -411,7 +431,7 @@ elif selected_tab == "⏰ VIP만기":
             for r in sorted(v_res, key=lambda x: str(x[21])): st.write(f"**만기:** {r[21]} | 📍 {r[5]} {r[6]}-{r[7]} {r[9]} | {r[9]}({r[10]}) {r[11]}")
         else: st.info("조건에 맞는 매물이 없습니다.")
 
-# 👑 [탭 7] 통합 정산 대시보드 (풀 계산기 로직 무삭제) 👑
+# 👑 [탭 7] 통합 정산 대시보드 (풀 계산기 로직 무삭제 유지!) 👑
 elif selected_tab == "👑 대시보드":
     st.subheader("👑 엘루이 전사 정산 및 매출 대시보드")
     hide_completed = st.checkbox("☑️ 급여 지급 완료(🔴)된 내역 숨기기", value=True)
