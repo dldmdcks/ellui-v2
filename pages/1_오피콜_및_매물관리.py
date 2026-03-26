@@ -1,35 +1,27 @@
 import streamlit as st
 import gspread
 from google.oauth2.credentials import Credentials
-from datetime import datetime, timedelta
 import json
-import requests
 import re
-import pandas as pd
+from datetime import datetime, timedelta
 
-# 🚨 [보안 방어막] 로그인 안 하고 몰래 주소 치고 들어오면 대문(app.py)으로 쫓아냄!
 if "connected" not in st.session_state or not st.session_state.connected:
     st.switch_page("app.py")
 
 st.set_page_config(page_title="오피콜 및 매물관리", page_icon="🔍", layout="wide")
-
-# 💡 [디자인] 라디오 버튼을 탭처럼 보이게 하는 마법 (튕김 방지)
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
         .stButton>button { padding: 0.2rem 0.5rem; min-height: 2rem; }
         .block-container { padding-top: 3.5rem; padding-bottom: 2rem; }
-        [data-testid="stSidebar"] { width: 280px !important; display: block !important; }
-        div[role="radiogroup"] {
-            flex-direction: row; gap: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f2f6; margin-bottom: 20px;
-        }
+        div[role="radiogroup"] { flex-direction: row; gap: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f2f6; margin-bottom: 20px; }
         .locked-tab { text-align: center; padding: 50px; background-color: #f8f9fa; border-radius: 10px; border: 2px dashed #ff4b4b; margin-top: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
-# 💡 [전국 법정동 풀데이터]
+# (전국 주소 데이터가 깁니다. 지우지 말고 그대로 쓰세요!)
 KOREA_REGION_DATA = {
     "서울특별시": {
         "강남구": ["개포동", "논현동", "대치동", "도곡동", "삼성동", "세곡동", "수서동", "신사동", "압구정동", "역삼동", "율현동", "일원동", "자곡동", "청담동"],
@@ -50,10 +42,8 @@ KOREA_REGION_DATA = {
     "경기도": {
         "하남시": ["감북동", "감이동", "감일동", "광암동", "교산동", "덕풍동", "망월동", "미사동", "배알미동", "상사창동", "상산곡동", "선동", "신장동", "창우동", "천현동", "초이동", "초일동", "춘궁동", "풍산동", "하사창동", "하산곡동", "학암동", "항동"],
         "성남시 수정구": ["고등동", "금토동", "단대동", "둔전동", "복정동", "사송동", "산성동", "상적동", "수진동", "시흥동", "신촌동", "신흥동", "양지동", "오야동", "창곡동", "태평동"],
-        "성남시 중원구": ["갈현동", "금광동", "도촌동", "상대원동", "성남동", "여수동", "은행동", "하대원동"],
         "성남시 분당구": ["구미동", "궁내동", "금곡동", "대장동", "동원동", "백현동", "분당동", "삼평동", "서현동", "석운동", "수내동", "야탑동", "운중동", "율동", "이매동", "정자동", "판교동", "하산운동"],
-        "수원시 영통구": ["망포동", "매탄동", "신동", "영통동", "원천동", "이의동", "하동"],
-        "용인시 수지구": ["고기동", "동천동", "상현동", "성복동", "신봉동", "죽전동", "풍덕천동"],
+        "수원시 팔달구": ["고등동", "교동", "구천동", "남수동", "남창동", "매교동", "매산로1가", "매산로2가", "매산로3가", "매향동", "북수동", "신풍동", "영동", "우만동", "인계동", "장안동", "중동", "지동", "팔달로1가", "팔달로2가", "팔달로3가", "화서동"],
     },
     "인천광역시": {
         "연수구": ["동춘동", "선학동", "송도동", "연수동", "옥련동", "청학동"],
@@ -61,16 +51,11 @@ KOREA_REGION_DATA = {
     }
 }
 
-try:
-    token_dict = json.loads(st.secrets["google_token_json"])
-except: 
-    st.error("❌ 금고 설정(Secrets) 확인 요망!"); st.stop()
-
+token_dict = json.loads(st.secrets["google_token_json"])
 @st.cache_resource
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
 ss = get_ss()
 ws_data = ss.get_worksheet_by_id(1969836502)
-
 try: ws_staff = ss.worksheet("직원명단")
 except: pass
 try: ws_history = ss.worksheet("토큰내역")
@@ -82,42 +67,38 @@ except: pass
 def fetch_all_data(): return ws_data.get_all_values(), ws_staff.get_all_records(), ws_history.get_all_values(), ws_settings.get_all_values()
 all_data_raw, staff_records, history_all_values, settings_all_values = fetch_all_data()
 
-# 💡 [직급 완벽 동기화]
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 user_email = st.session_state.user_info.get("email", "")
 
 now_kst = datetime.utcnow() + timedelta(hours=9)
 today_shift = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= 8 else (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")
 
+# 권한 및 할당량 로직
 if user_email in staff_dict:
-    user_name = staff_dict[user_email]['이름'] 
+    user_name = staff_dict[user_email]['이름']
     user_tokens = int(staff_dict[user_email].get('보유토큰', 0))
     staff_row_index = list(staff_dict.keys()).index(user_email) + 2 
     quota_done = int(staff_dict[user_email].get('할당진행도', 0)) if str(staff_dict[user_email].get('할당진행도', '')).isdigit() else 0
     if str(staff_dict[user_email].get('최근할당일', '')) != today_shift:
         ws_staff.update_cell(staff_row_index, 7, today_shift); ws_staff.update_cell(staff_row_index, 8, 0)
         quota_done = 0; st.cache_data.clear()
-    has_vip, is_locked = (str(staff_dict[user_email].get('VIP권한', 'X')) == 'O'), (quota_done < 5)
+    has_vip = (str(staff_dict[user_email].get('VIP권한', 'X')) == 'O')
+    is_locked = False if has_vip else (quota_done < 5) # VIP는 락 해제
 elif user_email in ADMIN_EMAILS:
-    user_name = "관리자 (시트 등록 요망)"
+    user_name = "관리자 (대표)"
     user_tokens, is_locked, has_vip, quota_done = 9999, False, True, 5
 else:
-    st.error("⚠️ 승인되지 않은 계정입니다. 대표님께 문의하세요."); st.stop()
+    st.error("승인되지 않은 계정입니다."); st.stop()
 
-history_records = history_all_values[1:] 
+history_records = history_all_values[1:]
 MANAGER_BUILDINGS = {b.strip(): r['이름'] for r in staff_records for b in str(r.get('관리건물', '')).split(',') if b.strip()}
+try: target_addresses = [a.strip().replace(" ", "") for a in (settings_all_values[1][1] if len(settings_all_values)>1 else "").split(",") if a.strip()]
+except: target_addresses = []
 
-def clean_numeric(text): return re.sub(r'[^0-9]', '', str(text))
-def extract_room_number(room_str): return int(clean_numeric(room_str)) if clean_numeric(room_str) else 99999
-def is_valid_date_format(date_str): return bool(re.match(r'^\d{4}\.\d{2}\.\d{2}$', str(date_str).strip()))
-def format_phone(text):
-    nums = clean_numeric(text)
-    if len(nums) == 11: return f"{nums[:3]}-{nums[3:7]}-{nums[7:]}"
-    elif len(nums) == 10: return f"{nums[:3]}-{nums[3:6]}-{nums[6:]}"
-    return nums
-
+def clean_numeric(t): return re.sub(r'[^0-9]', '', str(t))
+def is_valid_date(d): return bool(re.match(r'^\d{4}\.\d{2}\.\d{2}$', str(d).strip()))
 def update_token(t_name, amt, reason):
-    if "대표" in t_name or t_name in ["이응찬 대표", "곽태근 대표"]: return
+    if "대표" in t_name or "관리자" in t_name: return
     for i, r in enumerate(staff_records):
         if r['이름'] == t_name:
             ws_staff.update_cell(i + 2, 4, int(r.get('보유토큰', 0)) + amt)
@@ -134,20 +115,19 @@ def is_unlocked_recently(addr, room):
             except: continue
     return False
 
+# 데이터 전처리
 temp_dict = {}
 for i, r in enumerate(all_data_raw[1:]):
-    if user_email not in ADMIN_EMAILS and not has_vip and (r[25].strip() if len(r)>25 else "정상") in ["비공개", "삭제", "잘못됨"]: continue
+    if not has_vip and (r[25].strip() if len(r)>25 else "정상") in ["비공개", "삭제", "잘못됨"]: continue
     rp = (r + [""]*26)[:26] + [i + 2]
     temp_dict[(str(rp[2]).replace(" ",""), str(rp[3]), str(rp[4]), str(rp[7]), str(rp[8]), str(rp[9]), str(rp[10]))] = rp 
 all_records = list(temp_dict.values()); all_records.reverse()
 
-try: target_addresses = [a.strip().replace(" ", "") for a in (settings_all_values[1][1] if len(settings_all_values)>1 else "").split(",") if a.strip()]
-except: target_addresses = []
+st.sidebar.markdown(f"### 👤 {user_name}")
+st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 
-# --- 💡 상단 메뉴바 (라디오 버튼 방식 - 튕김 완벽 방지) ---
-tab_names = ["🔍 매물 검색", "👤 소유주 검색", "📞 오늘의 오피콜", "📝 신규 등록"]
-if has_vip or user_email in ADMIN_EMAILS: tab_names.append("⏰ VIP만기")
-
+tab_names = ["🔍 매물검색", "👤 소유주검색", "📞 오늘의 오피콜", "📝 신규등록"]
+if has_vip: tab_names.append("⏰ VIP만기")
 selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="collapsed")
 
 def render_edit_form(row_idx, city, gu, dong, bon, bu, road, bldg, d_dong, room, name, birth, phone, b_type, appr_date, viol, land_area, room_area, curr_biz, deposit, rent, fee, end_date, memo, addr_str, room_str, form_key, reward_reason, reward_amount):
@@ -157,33 +137,31 @@ def render_edit_form(row_idx, city, gu, dong, bon, bu, road, bldg, d_dong, room,
         new_deposit, new_rent, new_end = c2.text_input("보증금", value=str(deposit)), c3.text_input("월세", value=str(rent)), c4.text_input("만기일", value=str(end_date), placeholder="2026.04.00")
         new_memo_add = st.text_input("추가 특이사항")
         if st.form_submit_button(f"🛠️ 데이터 갱신 (+{reward_amount} 토큰)"):
-            if not new_end or not is_valid_date_format(new_end): st.error("🚨 만기일 YYYY.MM.DD 확인!"); return False
+            if not new_end or not is_valid_date(new_end): st.error("🚨 만기일 YYYY.MM.DD 확인!"); return False
             now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
             ws_data.update_cell(row_idx, 26, "비공개")
-            added_log = f"[{now_str[:10][2:].replace('-','.')}] "
-            if str(deposit) != new_deposit or str(rent) != new_rent: added_log += f"보/월 {new_deposit}/{new_rent} 변경. "
-            if str(end_date) != new_end: added_log += f"만기 {new_end}. "
-            new_full_memo = f"{memo}\n👉 {added_log}{new_memo_add}".strip() if memo else f"👉 {added_log}{new_memo_add}"
+            added_log = f"[{now_str[:10][2:].replace('-','.')}] 보/월 {new_deposit}/{new_rent} 만기 {new_end}"
+            new_full_memo = f"{memo}\n👉 {added_log} {new_memo_add}".strip() if memo else f"👉 {added_log} {new_memo_add}"
             ws_data.append_row([city, gu, dong, bon, bu, road, bldg, d_dong, room, name, birth, phone, new_btype, appr_date, viol, land_area, room_area, curr_biz, new_deposit, new_rent, fee, new_end, new_full_memo, now_str, user_name, "정상"], value_input_option='USER_ENTERED')
             update_token(user_name, reward_amount, f"{reward_reason} ({addr_str} {room_str})")
-            st.cache_data.clear(); st.success(f"✅ 반영 완료! (+{reward_amount})"); st.rerun()
-            return True
-    return False
+            st.cache_data.clear(); st.success("✅ 갱신 완료!"); st.rerun()
 
-# --- 탭별 로직 실행 ---
-if selected_tab == "🔍 매물 검색":
-    if is_locked: st.markdown(f"<div class='locked-tab'><h2>🔒 오늘 할당량을 먼저 완수해주세요!</h2><p>오늘의 오피콜 할당량({quota_done}/5건)을 완료해야 검색 기능을 사용할 수 있습니다.</p></div>", unsafe_allow_html=True)
+if selected_tab == "🔍 매물검색":
+    if is_locked: st.markdown(f"<div class='locked-tab'><h2>🔒 오늘 할당량을 먼저 완수해주세요!</h2><p>할당량({quota_done}/5건) 완료 시 해제</p></div>", unsafe_allow_html=True)
     else:
         c_s1, c_s2, c_s3 = st.columns(3)
-        sel_sido = c_s1.selectbox("시/도", ["전체"] + list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") + 1 if "서울특별시" in KOREA_REGION_DATA else 0)
+        sel_sido = c_s1.selectbox("시/도", ["전체"] + list(KOREA_REGION_DATA.keys()), index=1)
         gu_opts = ["전체"] + list(KOREA_REGION_DATA[sel_sido].keys()) if sel_sido != "전체" else ["전체"]
         sel_sigungu = c_s2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
         sel_dong = c_s3.selectbox("법정동", ["전체"] + (KOREA_REGION_DATA[sel_sido][sel_sigungu] if sel_sigungu != "전체" and sel_sido != "전체" else []), index=0)
         
         with st.form("search_addr_form"):
-            b_search, r_search = st.columns([2, 1])[0].text_input("번지/건물명", placeholder="28-2"), st.columns([2, 1])[1].text_input("호실", placeholder="101")
+            c_f1, c_f2 = st.columns([2, 1])
+            b_search = c_f1.text_input("번지/건물명", placeholder="28-2")
+            r_search = c_f2.text_input("호실", placeholder="101")
             if st.form_submit_button("🔍 검색", type="primary", use_container_width=True):
-                st.session_state.addr_search_res = sorted([r for r in all_records if (sel_sido=="전체" or sel_sido==str(r[0]).strip()) and (sel_sigungu=="전체" or sel_sigungu==str(r[1]).strip()) and (sel_dong=="전체" or sel_dong==str(r[2]).strip()) and (not b_search or b_search.replace(" ","") in ((f"{r[3]}-{r[4]}" if str(r[4])!="0" else str(r[3]))+str(r[6])).replace(" ","")) and (not r_search or r_search.replace(" ","") in (str(r[7])+str(r[8])).replace(" ",""))], key=lambda x: extract_room_number(x[8]))
+                st.session_state.addr_search_res = sorted([r for r in all_records if (sel_sido=="전체" or sel_sido==str(r[0]).strip()) and (sel_sigungu=="전체" or sel_sigungu==str(r[1]).strip()) and (sel_dong=="전체" or sel_dong==str(r[2]).strip()) and (not b_search or b_search.replace(" ","") in ((f"{r[3]}-{r[4]}" if str(r[4])!="0" else str(r[3]))+str(r[6])).replace(" ","")) and (not r_search or r_search.replace(" ","") in (str(r[7])+str(r[8])).replace(" ",""))], key=lambda x: int(clean_numeric(x[8])) if clean_numeric(x[8]) else 9999)
+        
         if st.session_state.get("addr_search_res"):
             st.caption(f"검색 결과: {len(st.session_state.addr_search_res)}건")
             for idx, row in enumerate(st.session_state.addr_search_res):
@@ -197,94 +175,101 @@ if selected_tab == "🔍 매물 검색":
                 if is_unlocked_recently(addr_str, room_str) or st.session_state.get(uk, False):
                     if st.button("🔓 닫기/열기", key=f"btn_re_{idx}"): st.session_state[tk] = not st.session_state.get(tk, False)
                     if st.session_state.get(tk, False):
-                        if "🏅[엘루이 자체계약]" in str(row[22]): st.markdown("#### 🏅 엘루이 자체계약 매물 (협의 수월)")
                         st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**보/월:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                         render_edit_form(row[26], row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20], row[21], row[22], addr_str, room_str, f"addr_upd_{idx}", "검색 갱신", 2)
                 else:
                     if st.button("🔓 열람 (-1토큰)", key=f"btn_addr_{idx}"):
-                        if user_tokens >= 1 or has_vip: update_token(user_name, -1, f"매물 열람 ({addr_str} {room_str})"); st.session_state[uk] = True; st.session_state[tk] = True; st.cache_data.clear(); st.rerun()
+                        if user_tokens >= 1 or has_vip: update_token(user_name, -1, f"매물 열람 ({addr_str})"); st.session_state[uk] = True; st.session_state[tk] = True; st.cache_data.clear(); st.rerun()
                         else: st.error("토큰 부족")
                 st.write("---")
 
-elif selected_tab == "👤 소유주 검색":
+elif selected_tab == "👤 소유주검색":
     if is_locked: st.markdown(f"<div class='locked-tab'><h2>🔒 오늘 할당량을 먼저 완수해주세요!</h2></div>", unsafe_allow_html=True)
     else:
         with st.form("search_owner_form"):
-            sn, sb = st.columns(2)[0].text_input("성함"), st.columns(2)[1].text_input("생년월일(6자리)")
+            c_o1, c_o2 = st.columns(2)
+            sn, sb = c_o1.text_input("성함"), c_o2.text_input("생년월일(6자리)")
             if st.form_submit_button("소유주 검색", type="primary", use_container_width=True):
-                st.session_state.owner_search_res = sorted([r for r in all_records if (sn in str(r[9])) and (not sb or sb == str(r[10]))], key=lambda x: extract_room_number(x[8]))
+                st.session_state.owner_search_res = sorted([r for r in all_records if (sn in str(r[9])) and (not sb or sb == str(r[10]))], key=lambda x: int(clean_numeric(x[8])) if clean_numeric(x[8]) else 9999)
         if st.session_state.get("owner_search_res"):
             for idx, row in enumerate(st.session_state.owner_search_res):
-                addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "") + (f" {row[6]}" if row[6] else "")
+                addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "")
                 room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
                 st.markdown(f"**👤 {row[9]}({row[10]}) | 📍 {addr_str} {room_str}**")
                 uk, tk = f"unlock_own_{addr_str}_{room_str}", f"toggle_own_{idx}"
                 if is_unlocked_recently(addr_str, room_str) or st.session_state.get(uk, False):
                     if st.button("🔓 닫기/열기", key=f"btn_re_own_{idx}"): st.session_state[tk] = not st.session_state.get(tk, False)
                     if st.session_state.get(tk, False):
-                        if "🏅[엘루이 자체계약]" in str(row[22]): st.markdown("#### 🏅 엘루이 자체계약 매물")
                         st.info(f"**연락처:** {row[11]} | **만기/보/월:** {row[21]} / {row[18]} / {row[19]}\n\n**히스토리:**\n{row[22]}")
                         render_edit_form(row[26], row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20], row[21], row[22], addr_str, room_str, f"own_upd_{idx}", "소유주 갱신", 2)
                 else:
                     if st.button("🔓 열람 (-1토큰)", key=f"btn_own_{idx}"):
-                        if user_tokens >= 1 or has_vip: update_token(user_name, -1, f"소유주 열람 ({addr_str} {room_str})"); st.session_state[uk] = True; st.session_state[tk] = True; st.cache_data.clear(); st.rerun()
+                        if user_tokens >= 1 or has_vip: update_token(user_name, -1, f"소유주 열람 ({addr_str})"); st.session_state[uk] = True; st.session_state[tk] = True; st.cache_data.clear(); st.rerun()
                         else: st.error("토큰 부족")
                 st.write("---")
 
 elif selected_tab == "📞 오늘의 오피콜":
-    st.subheader(f"📞 오늘의 오피콜 (진행도: {quota_done}/5)")
-    if quota_done >= 5: st.success("🎉 오늘의 오피콜을 모두 완료했습니다!")
+    # 💡 [무한루프 버그 & VIP 면제 해결]
+    if has_vip: 
+        st.success("🎉 대표님/VIP 계정은 오피콜 의무 할당량이 면제됩니다! (매물 갱신용으로 자유롭게 이용 가능합니다)")
+        quota_done = 5 
     else:
-        target_pool = [r for r in all_records if today_shift not in str(r[23]) and "연락처 없음" not in str(r[11]) and str(r[11]).strip() and next((True for ta in target_addresses if ta == (f"{r[2]}{r[3]}" + (f"-{r[4]}" if r[4] and r[4] != "0" else "")).replace(" ", "")), False)]
-        target_pool.sort(key=lambda x: str(x[23])) 
-        my_idx = sorted([r['이름'] for r in staff_records]).index(user_name) if user_name in [r['이름'] for r in staff_records] else 0
-        my_assigned_pool = target_pool[(my_idx * 5) : (my_idx * 5) + (5 - quota_done)]
-        if not my_assigned_pool: st.success("🎉 타겟 명단이 소진되었습니다!")
-        else:
-            for idx, row in enumerate(my_assigned_pool):
-                addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "")
-                room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
-                st.markdown(f"**🎯 타겟: {addr_str} {room_str}**")
-                st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보증/월세:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
-                if st.button("⏭️ 부재중/패스", key=f"pass_{row[26]}"):
-                    ws_data.update_cell(row[26], 24, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')); ws_data.update_cell(row[26], 25, user_name) 
-                    if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
-                    st.cache_data.clear(); st.rerun()
-                if render_edit_form(row[26], row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20], row[21], row[22], addr_str, room_str, f"task_upd_{idx}", "오피콜 갱신", 1):
-                    if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
-                    st.cache_data.clear(); st.rerun()
-                st.write("---")
+        st.subheader(f"📞 오늘의 오피콜 (진행도: {quota_done}/5)")
 
-elif selected_tab == "📝 신규 등록":
-    st.subheader("📝 외부 매물(공실클럽/네이버 등) 신규 등록 (+3 토큰)")
+    if quota_done >= 5 and not has_vip: st.success("🎉 오늘의 오피콜을 모두 완료했습니다!")
+    
+    target_pool = [r for r in all_records if today_shift not in str(r[23]) and "연락처 없음" not in str(r[11]) and str(r[11]).strip() and next((True for ta in target_addresses if ta == (f"{r[2]}{r[3]}" + (f"-{r[4]}" if r[4] and r[4] != "0" else "")).replace(" ", "")), False)]
+    target_pool.sort(key=lambda x: str(x[23])) 
+    my_idx = sorted([r['이름'] for r in staff_records]).index(user_name) if user_name in [r['이름'] for r in staff_records] else 0
+    
+    # 여기서 정확히 5개만 고정으로 자름 (무한 리필 방지)
+    items_to_show = 5 if has_vip else (5 - quota_done)
+    my_assigned_pool = target_pool[(my_idx * 5) : (my_idx * 5) + items_to_show] 
+    
+    if not my_assigned_pool: st.success("🎉 배정된 타겟 명단이 모두 소진되었습니다!")
+    else:
+        for idx, row in enumerate(my_assigned_pool):
+            addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "")
+            room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
+            st.markdown(f"**🎯 타겟: {addr_str} {room_str}**")
+            st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+            if st.button("⏭️ 부재중/패스", key=f"pass_{row[26]}"):
+                ws_data.update_cell(row[26], 24, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')); ws_data.update_cell(row[26], 25, user_name) 
+                if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
+                st.cache_data.clear(); st.rerun()
+            if render_edit_form(row[26], row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20], row[21], row[22], addr_str, room_str, f"task_upd_{idx}", "오피콜 갱신", 1):
+                if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
+                st.cache_data.clear(); st.rerun()
+            st.write("---")
+
+elif selected_tab == "📝 신규등록":
+    st.subheader("📝 신규 등록 (+3 토큰)")
     with st.form("new_data_form", clear_on_submit=True):
         c_reg1, c_reg2, c_reg3 = st.columns(3)
         n_city = c_reg1.selectbox("시/도", list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") if "서울특별시" in KOREA_REGION_DATA else 0)
-        gu_opts2 = list(KOREA_REGION_DATA[n_city].keys())
-        n_gu = c_reg2.selectbox("시/군/구", gu_opts2, index=gu_opts2.index("송파구") if "송파구" in gu_opts2 else 0)
-        dong_opts2 = KOREA_REGION_DATA[n_city][n_gu] + ["➕직접 입력"]
-        n_dong_sel = c_reg3.selectbox("법정동", dong_opts2, index=dong_opts2.index("방이동") if "방이동" in dong_opts2 else 0)
+        n_gu = c_reg2.selectbox("시/군/구", list(KOREA_REGION_DATA[n_city].keys()))
+        n_dong = c_reg3.text_input("법정동 (필수)", placeholder="방이동")
         
-        if n_dong_sel == "➕직접 입력": n_dong = st.text_input("법정동 직접 입력")
-        else: n_dong = n_dong_sel
-        
-        n_bon, n_bu, n_room = st.columns(3)[0].text_input("본번", placeholder="28"), st.columns(3)[1].text_input("부번", placeholder="2"), st.columns(3)[2].text_input("호실", placeholder="101")
-        n_btype = st.columns(3)[0].selectbox("용도", ["아파트", "오피스텔", "다세대", "다가구", "빌라", "상가"])
-        n_dep, n_rent, n_end = st.columns(3)[0].text_input("보증금", placeholder="10000000"), st.columns(3)[1].text_input("월세", placeholder="1000000"), st.columns(3)[2].text_input("만기일", placeholder="2026.04.00")
-        n_name, n_phone, n_memo = st.columns(2)[0].text_input("임대인 성함"), st.columns(2)[1].text_input("임대인 연락처"), st.text_area("특이사항")
+        c_n1, c_n2, c_n3 = st.columns(3)
+        n_bon, n_bu, n_room = c_n1.text_input("본번", placeholder="28"), c_n2.text_input("부번", placeholder="2"), c_n3.text_input("호실", placeholder="101")
+        n_btype = c_n1.selectbox("용도", ["아파트", "오피스텔", "다세대", "다가구", "빌라", "상가"])
+        n_dep, n_rent, n_end = c_n1.text_input("보증금", placeholder="10000000"), c_n2.text_input("월세", placeholder="1000000"), c_n3.text_input("만기일", placeholder="2026.04.00")
+        c_n4, c_n5 = st.columns(2)
+        n_name, n_phone = c_n4.text_input("임대인 성함"), c_n5.text_input("임대인 연락처")
+        n_memo = st.text_area("특이사항")
         
         if st.form_submit_button("🚀 매물 등록하기 (+3 토큰)", type="primary"):
             if not n_dong or not n_bon or not n_room: st.error("필수 항목(동, 번지, 호수)을 입력하세요.")
             else:
                 ws_data.append_row([n_city, n_gu, n_dong, n_bon, n_bu, "", "", "동없음", n_room, n_name, "", f"'{n_phone}", n_btype, "", "위반 없음", "", "", "", n_dep, n_rent, "", n_end, n_memo, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'), user_name, "정상"], value_input_option='USER_ENTERED')
-                update_token(user_name, 3, f"신규 매물 등록 ({n_dong} {n_bon}-{n_bu})"); st.cache_data.clear(); st.success("🎉 매물 등록 완료! (+3 토큰)"); st.rerun()
+                update_token(user_name, 3, f"신규 매물 등록 ({n_dong} {n_bon})"); st.cache_data.clear(); st.success("🎉 매물 등록 완료!"); st.rerun()
 
 elif selected_tab == "⏰ VIP만기":
     st.subheader("⏰ VIP 만기일 임박 매물 조회")
     months_ahead = st.columns([1, 3])[0].number_input("조회 개월 수", min_value=1, max_value=24, value=3)
     if st.button("조회 시작"):
         t_date = datetime.now() + timedelta(days=30 * months_ahead)
-        v_res = [r for r in all_records if str(r[21]).strip() and is_valid_date_format(str(r[21])) and datetime.now() <= datetime.strptime(str(r[21]).strip(), '%Y.%m.%d') <= t_date]
+        v_res = [r for r in all_records if str(r[21]).strip() and is_valid_date(str(r[21])) and datetime.now() <= datetime.strptime(str(r[21]).strip(), '%Y.%m.%d') <= t_date]
         if v_res:
             st.success(f"총 {len(v_res)}건의 만기 임박 매물이 있습니다.")
             for r in sorted(v_res, key=lambda x: str(x[21])): st.write(f"**만기:** {r[21]} | 📍 {r[5]} {r[6]}-{r[7]} {r[9]} | {r[9]}({r[10]}) {r[11]}")
