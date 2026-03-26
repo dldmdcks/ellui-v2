@@ -1,25 +1,23 @@
 import streamlit as st
 import gspread
 from google.oauth2.credentials import Credentials
-from datetime import datetime, timedelta
 import json
 import requests
-import re
+import pandas as pd
+from datetime import datetime, timedelta
 
-# 1. 페이지 설정 및 디자인
 st.set_page_config(page_title="엘루이 업무포털", page_icon="🏢", layout="wide")
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
         .stButton>button { padding: 0.2rem 0.5rem; min-height: 2rem; }
         .block-container { padding-top: 3.5rem; padding-bottom: 2rem; }
-        [data-testid="stSidebar"] { width: 280px !important; display: block !important; }
     </style>
 """, unsafe_allow_html=True)
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
-# 2. 구글 로그인 및 보안
+# --- 보안 및 로그인 ---
 try:
     creds_dict = json.loads(st.secrets["credentials_json"])
     token_dict = json.loads(st.secrets["google_token_json"])
@@ -29,8 +27,8 @@ try:
 except: st.error("❌ 금고 설정(Secrets) 확인 요망!"); st.stop()
 
 if 'connected' not in st.session_state: st.session_state.connected = False
-
 query_params = st.query_params
+
 if "session_token" in query_params and not st.session_state.connected:
     access_token = query_params["session_token"]
     user_info = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {access_token}"}).json()
@@ -49,7 +47,7 @@ if not st.session_state.connected:
     st.link_button("🔵 Google 계정으로 로그인", f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=select_account", type="primary", use_container_width=True)
     st.stop()
 
-# 3. 시트 데이터 연동
+# --- 데이터 연동 ---
 @st.cache_resource
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
 ss = get_ss()
@@ -63,84 +61,67 @@ except: pass
 def fetch_basic_data(): return ws_staff.get_all_records(), ws_settings.get_all_values()
 staff_records, settings_all_values = fetch_basic_data()
 
-# 💡 [직급 동기화]
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 user_email = st.session_state.user_info.get("email", "")
 
 if user_email in staff_dict:
-    user_name = staff_dict[user_email]['이름'] 
+    user_name = staff_dict[user_email]['이름'] # 직급 포함된 이름
     user_tokens = int(staff_dict[user_email].get('보유토큰', 0))
 elif user_email in ADMIN_EMAILS:
-    user_name = "관리자 (시트 등록 요망)"
+    user_name = "관리자 (대표)"
     user_tokens = 9999
 else:
-    st.error("⚠️ 승인되지 않은 계정입니다. 대표님께 문의하세요.")
-    st.stop()
+    st.error("⚠️ 승인되지 않은 계정입니다."); st.stop()
 
-# --- 사이드바 ---
+# 사이드바
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
-st.sidebar.markdown("<div style='font-size: 13px; color: #4a4a4a; margin-top: -5px;'><b style='color:#1E90FF'>[🪙 보유 토큰 안내]</b><br>👉 양타 결재 <b>+5</b><br>👉 단타/신규 <b>+3</b><br>👉 검색 갱신 <b>+2</b><br>👉 오피콜 갱신 <b>+1</b><br>👉 매물 열람 <b>-1</b></div>", unsafe_allow_html=True)
 if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.rerun()
 
 try: notice_text = settings_all_values[2][1] if len(settings_all_values) > 2 else ""
 except: notice_text = ""
 
-# ==========================================
-# 🏠 메인 로비 (대문 화면) 구성
-# ==========================================
+# --- 화면 렌더링 ---
 st.title("🏠 엘루이 업무 포털")
 
-# [1. 공지사항]
 if notice_text: 
     st.info(f"📢 **[전체 공지사항]**\n\n{notice_text}")
-
 st.write("---")
 
-# [2. 내부 업무망]
-st.subheader("🔗 엘루이 내부 업무망")
+st.subheader("🔗 내부 업무망 & 🌐 부동산 필수 사이트")
 st.columns(3)[0].link_button("📊 오피콜 시트 (마스터)", "https://docs.google.com/spreadsheets/d/11WZhFnPPIduKVSy3UG0-L1BrXRdddCBhzQLZGMVBSXc/", use_container_width=True)
 
-st.write("---")
-
-# [3. 부동산 필수 사이트]
-st.subheader("🌐 부동산 필수 사이트")
 c1, c2, c3 = st.columns(3)
+c1.link_button("🟢 네이버 부동산", "https://land.naver.com", use_container_width=True) # 추가 완료
+c2.link_button("🏛️ 정부24 (건축물대장)", "https://www.gov.kr", use_container_width=True)
+c3.link_button("📄 인터넷 등기소", "http://www.iros.go.kr", use_container_width=True)
 
-c1.link_button("🏛️ 정부24 (건축물대장)", "https://www.gov.kr", use_container_width=True)
-c2.link_button("📄 인터넷 등기소", "http://www.iros.go.kr", use_container_width=True)
-c3.link_button("🏢 공실클럽", "https://www.gongsilclub.com", use_container_width=True)
+c1.link_button("🏢 공실클럽", "https://www.gongsilclub.com", use_container_width=True)
+c2.link_button("🗺️ 씨리얼 (부동산정보)", "https://seereal.lh.or.kr", use_container_width=True)
+c3.link_button("🔥 도시가스 (코원에너지)", "https://www.coone.co.kr", use_container_width=True)
 
-c1.link_button("🗺️ 씨리얼 (부동산정보)", "https://seereal.lh.or.kr", use_container_width=True)
-c2.link_button("🔥 도시가스 (코원에너지)", "https://www.coone.co.kr", use_container_width=True)
-c3.link_button("⚖️ 법제처 (국가법령)", "https://www.law.go.kr", use_container_width=True)
-
-c1.link_button("📍 밸류맵", "https://www.valueupmap.com", use_container_width=True)
-c2.link_button("🏦 KB부동산", "https://kbland.kr", use_container_width=True)
-c3.link_button("📈 부동산테크", "https://www.rtech.or.kr", use_container_width=True)
+c1.link_button("⚖️ 법제처 (국가법령)", "https://www.law.go.kr", use_container_width=True)
+c2.link_button("📍 밸류맵", "https://www.valueupmap.com", use_container_width=True)
+c3.link_button("🏦 KB부동산", "https://kbland.kr", use_container_width=True)
 
 c1.link_button("🏘️ 렌트홈", "https://www.renthome.go.kr", use_container_width=True)
 c2.link_button("🧮 부동산 계산기", "https://xn--989a00af8jnslv3dba.com/", use_container_width=True)
 c3.link_button("💰 홈택스 (기준시가)", "https://www.hometax.go.kr", use_container_width=True)
-
-c1.link_button("🔔 공시가격 알리미", "https://www.realtyprice.kr", use_container_width=True)
-c2.link_button("🛡️ HUG 보증보험 확인", "https://www.khug.or.kr", use_container_width=True)
-c3.link_button("🏗️ 세움터", "https://cloud.eais.go.kr", use_container_width=True)
-
 st.write("---")
 
-# [4. 제휴 및 협력 업체]
 st.subheader("🤝 엘루이 제휴 및 협력 업체")
 hc1, hc2 = st.columns(2)
 with hc1:
-    st.markdown("""
-    **🧹 청소 전문업체 [하루하침]**
-    - 연락처: 010-0000-0000
-    - 단가: 원룸 15만 / 투룸 25만
-    """)
+    st.markdown("**🧹 청소 전문업체 [하루하침]**")
+    try: st.image("clean.jpg", use_container_width=True)
+    except: st.warning("clean.jpg 이미지가 업로드되지 않았습니다.")
 with hc2:
-    st.markdown("""
-    **🔧 전속 수리업체 [최고 송파동점]**
-    - 연락처: 010-1111-1111
-    - 비고: 도배, 장판, 누수 즉시 출동
-    """)
+    st.markdown("**🔧 전속 수리업체 [집고 송파동점]**")
+    try: st.image("zipgo.jpg", use_container_width=True)
+    except: st.warning("zipgo.jpg 이미지가 업로드되지 않았습니다.")
+
+# 관리자 전용 숨김 메뉴
+if user_email in ADMIN_EMAILS:
+    st.write("---")
+    st.subheader("⚙️ 관리자 환경설정")
+    st.info("구글 스프레드시트의 '환경설정' 탭에서 공지사항과 오피콜 타겟을 직접 수정하실 수 있습니다.")
