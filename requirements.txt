@@ -1,0 +1,5 @@
+streamlit
+gspread
+streamlit-google-auth
+pandas
+requests
