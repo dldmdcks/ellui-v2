@@ -78,18 +78,17 @@ elif user_email in ADMIN_EMAILS:
 else:
     st.error("⚠️ 승인되지 않은 계정입니다."); st.stop()
 
-# 시간 기준 설정 (오전 8시 리셋)
 now_kst = datetime.utcnow() + timedelta(hours=9)
 today_shift = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= 8 else (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")
 current_month_str = now_kst.strftime("%Y-%m")
-
-weekday = now_kst.weekday()
-start_of_week = (now_kst - timedelta(days=weekday)).replace(hour=0, minute=0, second=0, microsecond=0)
+start_of_week = (now_kst - timedelta(days=now_kst.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
 # --- 사이드바 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.rerun()
+st.sidebar.write("---")
+
 st.sidebar.markdown("### 🧭 메뉴 이동")
 st.sidebar.page_link("app.py", label="홈", icon="🏠")
 st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
@@ -98,6 +97,8 @@ st.sidebar.write("---")
 
 try: notice_text = settings_all_values[2][1] if len(settings_all_values) > 2 else ""
 except: notice_text = ""
+try: idpw_text = settings_all_values[3][1] if len(settings_all_values) > 3 else ""
+except: idpw_text = ""
 
 # ==========================================
 # 🏠 메인 로비 렌더링
@@ -130,10 +131,14 @@ c3.link_button("🧮 부동산 계산기", "https://xn--989a00af8jnslv3dba.com/"
 
 c1.link_button("💰 홈택스 (기준시가)", "https://www.hometax.go.kr", use_container_width=True)
 c2.link_button("🔔 공시가격 알리미", "https://www.realtyprice.kr", use_container_width=True)
-c3.link_button("🛡️ HUG 보증보험 확인", "https://www.khug.or.kr", use_container_width=True)
+c3.link_button("🛡️ HUG 보증보험 확인", "https://khig.khug.or.kr/websquare/popup.html?w2xPath=/cg/ae/CGAE034P02.xml&popupID=help&idx=idx10_16146745922339600.17851819347&w2xHome=/login/&w2xDocumentRoot=", use_container_width=True)
 
-c1.link_button("🏗️ 세움터", "https://cloud.eais.go.kr", use_container_width=True)
+st.write("---")
 
+# 💡 [업데이트] 공용 계정 정보 섹션 추가
+st.subheader("🔑 회사 공용 계정 (ID/PW)")
+if idpw_text: st.info(idpw_text)
+else: st.info("등록된 공용 계정 정보가 없습니다. 관리자가 대시보드에서 등록할 수 있습니다.")
 st.write("---")
 
 st.subheader("🤝 엘루이 제휴 및 협력 업체")
@@ -154,103 +159,74 @@ if user_email in ADMIN_EMAILS:
     st.write("---")
     st.header("👑 최고 관리자 대시보드")
     
-    col_admin1, col_admin2 = st.columns(2)
+    col_admin1, col_admin2, col_admin3 = st.columns(3)
     with col_admin1:
         st.subheader("📢 공지사항 설정")
         with st.form("notice_form", clear_on_submit=False):
             new_notice = st.text_area("공지사항 입력", value=notice_text)
             if st.form_submit_button("💾 공지사항 저장"):
                 ws_settings.update_cell(3, 2, new_notice)
-                st.cache_data.clear(); st.success("공지사항 저장 완료!"); st.rerun()
+                st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
 
     with col_admin2:
         st.subheader("🎯 오피콜 타겟 설정")
         current_target = settings_all_values[1][1] if len(settings_all_values)>1 else ""
         with st.form("target_form", clear_on_submit=False):
-            new_target = st.text_input("타겟 주소 (쉼표로 구분)", value=current_target)
+            new_target = st.text_input("타겟 주소 (쉼표 구분)", value=current_target)
             if st.form_submit_button("💾 타겟 주소 저장"):
                 ws_settings.update_cell(2, 2, new_target)
-                st.cache_data.clear(); st.success("타겟 주소 저장 완료!"); st.rerun()
+                st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
+                
+    with col_admin3:
+        st.subheader("🔑 공용 계정(ID/PW) 설정")
+        with st.form("idpw_form", clear_on_submit=False):
+            new_idpw = st.text_area("계정 정보 입력", value=idpw_text, height=100)
+            if st.form_submit_button("💾 계정 정보 저장"):
+                ws_settings.update_cell(4, 2, new_idpw)
+                st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
 
-    # --- 직원 스탯 계산 (기여도 및 업무량) ---
     stats_dict = {r['이름']: {"week_call": 0, "op_update": 0, "villa_new": 0, "month_score": 0, "total_score": 0} for r in staff_records if r['이름'] not in ["이응찬 대표", "곽태근 대표"]}
     
     for row in history_all_values[1:]:
         if len(row) < 5: continue
         dt_str, t_name, reason = str(row[0]), str(row[1]), str(row[4])
         if t_name not in stats_dict: continue
-        
         try: r_dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
         except: continue
-        
         is_this_week = r_dt >= start_of_week
         is_this_month = r_dt.strftime("%Y-%m") == current_month_str
         
-        # 기여도 점수 산정 (신규 5점, 아파트/오피스텔 3점, 기타 1점)
         pts = 0
         if "신규" in reason: pts = 5
-        elif "갱신" in reason:
+        elif "갱신" in reason or "연장" in reason:
             if "아파트" in reason or "오피스텔" in reason: pts = 3
             else: pts = 1
             
         stats_dict[t_name]["total_score"] += pts
         if is_this_month: stats_dict[t_name]["month_score"] += pts
-            
-        # 세부 항목 카운트
         if "오피콜" in reason and is_this_week: stats_dict[t_name]["week_call"] += 1
         if "갱신" in reason and "오피스텔" in reason: stats_dict[t_name]["op_update"] += 1
         if "신규" in reason and "빌라" in reason: stats_dict[t_name]["villa_new"] += 1
 
-    # --- 직원 통합 통제 보드 ---
     st.subheader("🏆 직원 통합 통제 보드 & 기여도 현황")
     admin_staff_data = []
-    
     for r in staff_records:
         name = r['이름']
         if name in ["이응찬 대표", "곽태근 대표"]: continue
-        
-        # 오전 8시 기준 리셋 로직 반영
         last_shift = str(r.get('최근할당일', ''))
-        if last_shift != today_shift: q_done = 0
-        else: q_done = int(r.get('할당진행도', 0)) if str(r.get('할당진행도','')).isdigit() else 0
-            
+        q_done = 0 if last_shift != today_shift else (int(r.get('할당진행도', 0)) if str(r.get('할당진행도','')).isdigit() else 0)
         st_info = stats_dict.get(name, {})
-        
-        admin_staff_data.append({
-            "직원명": name,
-            "VIP권한": str(r.get('VIP권한', 'X')) == 'O',
-            "할당진행도": f"{q_done}/5",
-            "잔여토큰": int(r.get('보유토큰', 0)),
-            "이번주 오피콜(건)": st_info["week_call"],
-            "오피스텔 갱신(누적)": st_info["op_update"],
-            "빌라 신규(누적)": st_info["villa_new"],
-            "이번달 기여도(점)": st_info["month_score"]
-        })
+        admin_staff_data.append({"직원명": name, "VIP권한": str(r.get('VIP권한', 'X')) == 'O', "할당진행도": f"{q_done}/5", "잔여토큰": int(r.get('보유토큰', 0)), "이번주 오피콜(건)": st_info["week_call"], "오피스텔 갱신(누적)": st_info["op_update"], "빌라 신규(누적)": st_info["villa_new"], "이번달 기여도(점)": st_info["month_score"]})
 
     df_admin = pd.DataFrame(admin_staff_data)
-    edited_staff = st.data_editor(
-        df_admin,
-        column_config={
-            "VIP권한": st.column_config.CheckboxColumn("VIP권한 허용"),
-            "잔여토큰": st.column_config.NumberColumn("잔여토큰(수정가능)")
-        },
-        disabled=["직원명", "할당진행도", "이번주 오피콜(건)", "오피스텔 갱신(누적)", "빌라 신규(누적)", "이번달 기여도(점)"],
-        hide_index=True,
-        use_container_width=True
-    )
+    edited_staff = st.data_editor(df_admin, column_config={"VIP권한": st.column_config.CheckboxColumn("VIP권한 허용"), "잔여토큰": st.column_config.NumberColumn("잔여토큰(수정가능)")}, disabled=["직원명", "할당진행도", "이번주 오피콜(건)", "오피스텔 갱신(누적)", "빌라 신규(누적)", "이번달 기여도(점)"], hide_index=True, use_container_width=True)
 
-    c_save1, c_save2 = st.columns([1, 4])
-    if c_save1.button("💾 토큰 및 VIP권한 저장", type="primary"):
+    if st.columns([1, 4])[0].button("💾 토큰/VIP 저장", type="primary"):
         for idx, row in edited_staff.iterrows():
             staff_name, vip_val, token_val = row['직원명'], "O" if row['VIP권한'] else "X", row['잔여토큰']
             for i, sr in enumerate(staff_records):
                 if sr['이름'] == staff_name:
                     s_idx = i + 2
-                    ws_staff.update_cell(s_idx, 4, token_val)  # 토큰 열 (D)
-                    ws_staff.update_cell(s_idx, 6, vip_val)    # VIP 열 (F)
+                    ws_staff.update_cell(s_idx, 4, token_val); ws_staff.update_cell(s_idx, 6, vip_val)
                     break
-        st.cache_data.clear(); st.success("직원 설정이 완벽하게 저장되었습니다!"); st.rerun()
-
-    if st.toggle("📈 전체 누적 기여도 스탯 따로 보기"):
-        acc_data = [{"직원명": k, "총 누적 기여도(점)": v["total_score"]} for k, v in stats_dict.items()]
-        st.dataframe(pd.DataFrame(acc_data).sort_values("총 누적 기여도(점)", ascending=False), hide_index=True)
+        st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
