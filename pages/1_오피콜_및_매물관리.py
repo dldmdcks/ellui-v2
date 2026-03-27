@@ -137,10 +137,10 @@ st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.switch_page("app.py")
 st.sidebar.write("---")
 
-st.sidebar.markdown("### 🧭 엘루이 메뉴 이동")
-st.sidebar.page_link("app.py", label="🏠 홈 (대문 & 관리자)", icon="🏠")
-st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="🔍 매물관리 & 오피콜", icon="🔍")
-st.sidebar.page_link("pages/2_계약보고_시스템.py", label="💰 계약보고 & 정산", icon="💰")
+st.sidebar.markdown("### 🧭 메뉴 이동")
+st.sidebar.page_link("app.py", label="홈", icon="🏠")
+st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
+st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
 st.sidebar.write("---")
 
 # --- 💡 상단 메뉴바 ---
