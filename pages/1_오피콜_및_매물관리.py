@@ -5,15 +5,19 @@ import json
 import re
 from datetime import datetime, timedelta
 
+# 🚨 [보안] 로그인 안 하고 들어오면 대문으로 쫓아냄
 if "connected" not in st.session_state or not st.session_state.connected:
     st.switch_page("app.py")
 
 st.set_page_config(page_title="오피콜 및 매물관리", page_icon="🔍", layout="wide")
+
+# 💡 [디자인] 기본 회색 메뉴판 숨기고 라디오 버튼 가로 정렬
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
         .stButton>button { padding: 0.2rem 0.5rem; min-height: 2rem; }
         .block-container { padding-top: 3.5rem; padding-bottom: 2rem; }
+        [data-testid="stSidebarNav"] { display: none !important; } /* 회색 메뉴판 숨김 */
         div[role="radiogroup"] { flex-direction: row; gap: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f2f6; margin-bottom: 20px; }
         .locked-tab { text-align: center; padding: 50px; background-color: #f8f9fa; border-radius: 10px; border: 2px dashed #ff4b4b; margin-top: 20px;}
     </style>
@@ -21,7 +25,7 @@ st.markdown("""
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
-# (전국 주소 데이터가 깁니다. 지우지 말고 그대로 쓰세요!)
+# 전국 행정구역 데이터
 KOREA_REGION_DATA = {
     "서울특별시": {
         "강남구": ["개포동", "논현동", "대치동", "도곡동", "삼성동", "세곡동", "수서동", "신사동", "압구정동", "역삼동", "율현동", "일원동", "자곡동", "청담동"],
@@ -67,28 +71,32 @@ except: pass
 def fetch_all_data(): return ws_data.get_all_values(), ws_staff.get_all_records(), ws_history.get_all_values(), ws_settings.get_all_values()
 all_data_raw, staff_records, history_all_values, settings_all_values = fetch_all_data()
 
+# 로그인 권한 및 데이터 세팅
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 user_email = st.session_state.user_info.get("email", "")
 
 now_kst = datetime.utcnow() + timedelta(hours=9)
 today_shift = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= 8 else (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")
 
-# 권한 및 할당량 로직
 if user_email in staff_dict:
     user_name = staff_dict[user_email]['이름']
     user_tokens = int(staff_dict[user_email].get('보유토큰', 0))
     staff_row_index = list(staff_dict.keys()).index(user_email) + 2 
-    quota_done = int(staff_dict[user_email].get('할당진행도', 0)) if str(staff_dict[user_email].get('할당진행도', '')).isdigit() else 0
-    if str(staff_dict[user_email].get('최근할당일', '')) != today_shift:
-        ws_staff.update_cell(staff_row_index, 7, today_shift); ws_staff.update_cell(staff_row_index, 8, 0)
+    
+    last_shift = str(staff_dict[user_email].get('최근할당일', ''))
+    if last_shift != today_shift:
+        ws_staff.update_cell(staff_row_index, 7, today_shift)
+        ws_staff.update_cell(staff_row_index, 8, 0)
         quota_done = 0; st.cache_data.clear()
+    else:
+        quota_done = int(staff_dict[user_email].get('할당진행도', 0)) if str(staff_dict[user_email].get('할당진행도', '')).isdigit() else 0
+        
     has_vip = (str(staff_dict[user_email].get('VIP권한', 'X')) == 'O')
-    is_locked = False if has_vip else (quota_done < 5) # VIP는 락 해제
+    is_locked = False if has_vip else (quota_done < 5) 
 elif user_email in ADMIN_EMAILS:
-    user_name = "관리자 (대표)"
+    user_name = "이응찬 대표" if user_email == "dldmdcks94@gmail.com" else "곽태근 대표"
     user_tokens, is_locked, has_vip, quota_done = 9999, False, True, 5
-else:
-    st.error("승인되지 않은 계정입니다."); st.stop()
+else: st.error("승인되지 않은 계정입니다."); st.stop()
 
 history_records = history_all_values[1:]
 MANAGER_BUILDINGS = {b.strip(): r['이름'] for r in staff_records for b in str(r.get('관리건물', '')).split(',') if b.strip()}
@@ -115,7 +123,7 @@ def is_unlocked_recently(addr, room):
             except: continue
     return False
 
-# 데이터 전처리
+# 매물 데이터 정리
 temp_dict = {}
 for i, r in enumerate(all_data_raw[1:]):
     if not has_vip and (r[25].strip() if len(r)>25 else "정상") in ["비공개", "삭제", "잘못됨"]: continue
@@ -123,9 +131,19 @@ for i, r in enumerate(all_data_raw[1:]):
     temp_dict[(str(rp[2]).replace(" ",""), str(rp[3]), str(rp[4]), str(rp[7]), str(rp[8]), str(rp[9]), str(rp[10]))] = rp 
 all_records = list(temp_dict.values()); all_records.reverse()
 
+# --- 🧭 사이드바 (정보 + 네비게이션) ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
+if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.switch_page("app.py")
+st.sidebar.write("---")
 
+st.sidebar.markdown("### 🧭 엘루이 메뉴 이동")
+st.sidebar.page_link("app.py", label="🏠 홈 (대문 & 관리자)", icon="🏠")
+st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="🔍 매물관리 & 오피콜", icon="🔍")
+st.sidebar.page_link("pages/2_계약보고_시스템.py", label="💰 계약보고 & 정산", icon="💰")
+st.sidebar.write("---")
+
+# --- 💡 상단 메뉴바 ---
 tab_names = ["🔍 매물검색", "👤 소유주검색", "📞 오늘의 오피콜", "📝 신규등록"]
 if has_vip: tab_names.append("⏰ VIP만기")
 selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="collapsed")
@@ -209,7 +227,6 @@ elif selected_tab == "👤 소유주검색":
                 st.write("---")
 
 elif selected_tab == "📞 오늘의 오피콜":
-    # 💡 [무한루프 버그 & VIP 면제 해결]
     if has_vip: 
         st.success("🎉 대표님/VIP 계정은 오피콜 의무 할당량이 면제됩니다! (매물 갱신용으로 자유롭게 이용 가능합니다)")
         quota_done = 5 
@@ -222,7 +239,6 @@ elif selected_tab == "📞 오늘의 오피콜":
     target_pool.sort(key=lambda x: str(x[23])) 
     my_idx = sorted([r['이름'] for r in staff_records]).index(user_name) if user_name in [r['이름'] for r in staff_records] else 0
     
-    # 여기서 정확히 5개만 고정으로 자름 (무한 리필 방지)
     items_to_show = 5 if has_vip else (5 - quota_done)
     my_assigned_pool = target_pool[(my_idx * 5) : (my_idx * 5) + items_to_show] 
     
