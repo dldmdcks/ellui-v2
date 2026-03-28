@@ -25,6 +25,7 @@ st.markdown("""
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
+# [전국 주소 데이터 생략 없이 유지]
 KOREA_REGION_DATA = {
     "서울특별시": {"강남구": ["개포동", "논현동", "대치동", "도곡동", "삼성동", "세곡동", "수서동", "신사동", "압구정동", "역삼동", "율현동", "일원동", "자곡동", "청담동"], "강동구": ["강일동", "고덕동", "길동", "둔촌동", "명일동", "상일동", "성내동", "암사동", "천호동"], "송파구": ["가락동", "거여동", "마천동", "문정동", "방이동", "삼전동", "석촌동", "송파동", "신천동", "오금동", "잠실동", "장지동", "풍납동"], "서초구": ["내곡동", "반포동", "방배동", "서초동", "신원동", "양재동", "염곡동", "우면동", "원지동", "잠원동"], "강서구": ["가양동", "개화동", "공항동", "과해동", "내발산동", "등촌동", "마곡동", "방화동", "염창동", "오곡동", "오쇠동", "외발산동", "화곡동"], "관악구": ["남현동", "봉천동", "신림동"], "광진구": ["광장동", "구의동", "군자동", "능동", "자양동", "중곡동", "화양동"], "동대문구": ["답십리동", "신설동", "용두동", "이문동", "장안동", "전농동", "제기동", "청량리동", "회기동", "휘경동"], "마포구": ["공덕동", "구수동", "노고산동", "당인동", "대흥동", "도화동", "마포동", "망원동", "상수동", "상암동", "서교동", "성산동", "신공덕동", "신수동", "신정동", "아현동", "연남동", "염리동", "용강동", "중동", "창전동", "토정동", "하중동", "합정동", "현석동"], "성동구": ["금호동1가", "금호동2가", "금호동3가", "금호동4가", "도선동", "마장동", "사근동", "상왕십리동", "성수동1가", "성수동2가", "송정동", "옥수동", "용답동", "응봉동", "하왕십리동", "행당동", "홍익동"], "용산구": ["갈월동", "남영동", "도원동", "동빙고동", "동자동", "문배동", "보광동", "산천동", "서계동", "서빙고동", "신계동", "신창동", "용문동", "용산동1가", "용산동2가", "용산동3가", "용산동4가", "용산동5가", "용산동6가", "원효로1가", "원효로2가", "원효로3가", "원효로4가", "이촌동", "이태원동", "주성동", "청파동1가", "청파동2가", "청파동3가", "한강로1가", "한강로2가", "한강로3가", "한남동", "효창동", "후암동"], "영등포구": ["당산동", "당산동1가", "당산동2가", "당산동3가", "당산동4가", "당산동5가", "당산동6가", "대림동", "도림동", "문래동1가", "문래동2가", "문래동3가", "문래동4가", "문래동5가", "문래동6가", "신길동", "양평동", "양평동1가", "양평동2가", "양평동3가", "양평동4가", "양평동5가", "양평동6가", "양화동", "여의도동", "영등포동", "영등포동1가", "영등포동2가", "영등포동3가", "영등포동4가", "영등포동5가", "영등포동6가", "영등포동7가", "영등포동8가"], "종로구": ["가회동", "견지동", "경운동", "공평동", "관수동", "관철동", "관훈동", "교남동", "교북동", "구기동", "궁정동", "권농동", "낙원동", "내수동", "내자동", "누상동", "누하동", "당주동", "도렴동", "돈의동", "동숭동", "명륜1가", "명륜2가", "명륜3가", "명륜4가", "묘동", "무악동", "봉익동", "부암동", "사직동", "삼청동", "서린동", "세종로", "소격동", "송월동", "송현동", "수송동", "숭인동", "신교동", "신문로1가", "신문로2가", "신영동", "안국동", "연건동", "연지동", "예지동", "옥인동", "와룡동", "운니동", "원남동", "원서동", "이화동", "익선동", "인사동", "인의동", "장사동", "재동", "적선동", "종로1가", "종로2가", "종로3가", "종로4가", "종로5가", "종로6가", "중학동", "창성동", "창신동", "청운동", "청진동", "체부동", "충신동", "통의동", "통인동", "팔판동", "평동", "평창동", "필운동", "행촌동", "혜화동", "홍지동", "홍파동", "화동", "효자동", "효제동", "훈정동"], "중구": ["광희동1가", "광희동2가", "남대문로1가", "남대문로2가", "남대문로3가", "남대문로4가", "남대문로5가", "남산동1가", "남산동2가", "남산동3가", "남창동", "남학동", "다동", "만리동1가", "만리동2가", "명동1가", "명동2가", "무교동", "무학동", "묵정동", "방산동", "봉래동1가", "봉래동2가", "북창동", "산림동", "삼각동", "서소문동", "소공동", "수표동", "수하동", "순화동", "신당동", "쌍림동", "예관동", "예장동", "오장동", "을지로1가", "을지로2가", "을지로3가", "을지로4가", "을지로5가", "을지로6가", "을지로7가", "인현동1가", "인현동2가", "입정동", "장교동", "장충동1가", "장충동2가", "저동1가", "저동2가", "정동", "주교동", "주자동", "중림동", "초동", "충무로1가", "충무로2가", "충무로3가", "충무로4가", "충무로5가", "태평로1가", "태평로2가", "필동1가", "필동2가", "필동3가", "황학동", "회현동1가", "회현동2가", "회현동3가", "흥인동"]},
     "경기도": {"하남시": ["감북동", "감이동", "감일동", "광암동", "교산동", "덕풍동", "망월동", "미사동", "배알미동", "상사창동", "상산곡동", "선동", "신장동", "창우동", "천현동", "초이동", "초일동", "춘궁동", "풍산동", "하사창동", "하산곡동", "학암동", "항동"], "성남시 수정구": ["고등동", "금토동", "단대동", "둔전동", "복정동", "사송동", "산성동", "상적동", "수진동", "시흥동", "신촌동", "신흥동", "양지동", "오야동", "창곡동", "태평동"], "성남시 분당구": ["구미동", "궁내동", "금곡동", "대장동", "동원동", "백현동", "분당동", "삼평동", "서현동", "석운동", "수내동", "야탑동", "운중동", "율동", "이매동", "정자동", "판교동", "하산운동"], "수원시 팔달구": ["고등동", "교동", "구천동", "남수동", "남창동", "매교동", "매산로1가", "매산로2가", "매산로3가", "매향동", "북수동", "신풍동", "영동", "우만동", "인계동", "장안동", "중동", "지동", "팔달로1가", "팔달로2가", "팔달로3가", "화서동"]},
@@ -91,7 +92,6 @@ def is_managed_building(addr_str):
         if b_name.replace(" ","") in addr_str.replace(" ",""): return True
     return False
 
-# 💡 [핵심] 데이터 분류 (관리건물은 절대 폭파되지 않음)
 all_records = []
 live_records = [] 
 expired_records = [] 
@@ -116,11 +116,8 @@ for i, r in enumerate(all_data_raw[1:]):
     is_managed = is_managed_building(full_addr_check)
 
     if is_live_format:
-        if is_managed:
-            # 관리건물은 D-Day와 상관없이 무조건 라이브 방에 남음 (절대 방어)
-            live_records.append(rp)
+        if is_managed: live_records.append(rp)
         else:
-            # 일반 매물은 7일 지나면 터짐
             if d_day >= 0: live_records.append(rp)
             elif d_day < 0 and str(rp[24]).strip(): expired_records.append(rp)
             
@@ -141,7 +138,6 @@ def send_kakao_live_room(new_highlight_msg=""):
         is_managed = False
         for m_bldg in MANAGER_BUILDINGS.keys():
             if m_bldg.replace(" ","") in b_name.replace(" ",""): is_managed = True; break
-        
         display_b_name = f"👑전속: {b_name}" if is_managed else b_name
         msg += f"<{display_b_name}>\n"
         
@@ -153,11 +149,8 @@ def send_kakao_live_room(new_highlight_msg=""):
             rent = int(clean_numeric(r[19])) if clean_numeric(r[19]) else 0
             price_str = f"{dep},{rent}" if rent > 0 else f"{dep}"
             memo_short = str(r[22]).split('\n')[0][:15] 
-            
-            # 💡 [업데이트] 카톡에도 D+ 표기
             d_val = r[29]
             d_str = f"D-{d_val}" if d_val >= 0 else f"D+{-d_val} 🚨"
-            
             msg += f"{b_name}/{ho}/{tr_type} {price_str}/{memo_short}/{biz_type}/{r[24]}/{d_str}\n"
         msg += "\n"
         
@@ -178,9 +171,7 @@ st.sidebar.page_link("app.py", label="홈", icon="🏠")
 st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
 st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
 st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝")
-
-if user_email in ADMIN_EMAILS:
-    st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
+if user_email in ADMIN_EMAILS: st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
 tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "👤 소유주검색", "📞 오늘의 오피콜"]
@@ -222,7 +213,8 @@ if selected_tab == "🔥 실시간 매물방":
             
             n_memo = st.text_area("특이사항")
             
-            if st.form_submit_button("🚀 매물방에 등록하기 (+3 토큰)", type="primary"):
+            # 💡 [업데이트] 토큰 지급 텍스트 삭제 및 로직 수정
+            if st.form_submit_button("🚀 매물방에 등록하기", type="primary"):
                 is_duplicate = False
                 dup_manager = ""
                 for lr in live_records:
@@ -232,15 +224,32 @@ if selected_tab == "🔥 실시간 매물방":
                 if is_duplicate: st.error(f"🚨 이미 매물방에 등록되어 살아있는 매물입니다! (현재 담당자: {dup_manager})")
                 elif not n_dong or not n_bon or not n_room: st.error("필수 항목(동, 번지, 호수)을 입력하세요.")
                 else:
+                    # 💡 [업데이트] 기존 DB 검색 후 '비공개' 처리 및 히스토리 승계 로직!
+                    in_dong, in_bon, in_bu, in_room = str(n_dong).strip(), str(n_bon).strip(), str(n_bu).strip() if str(n_bu).strip() else "0", re.sub(r'[^0-9]', '', str(n_room))
+                    old_history = ""
+                    
+                    for idx_db, r_row in enumerate(all_data_raw):
+                        if idx_db == 0: continue
+                        r_dong, r_bon, r_bu = str(r_row[2]).strip(), str(r_row[3]).strip(), str(r_row[4]).strip()
+                        r_room = re.sub(r'[^0-9]', '', str(r_row[8])) if len(r_row)>8 else ""
+                        
+                        if r_dong == in_dong and r_bon == in_bon and r_bu == in_bu and r_room == in_room:
+                            curr_hist = str(r_row[22]).strip() if len(r_row)>22 else ""
+                            if len(curr_hist) > len(old_history): old_history = curr_hist
+                            if len(r_row) <= 25 or str(r_row[25]).strip() != "비공개":
+                                ws_data.update_cell(idx_db+1, 26, "비공개")
+                    
                     now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                    final_memo = f"{old_history}\n👉 [{now_str[:10][2:].replace('-','.')}] 매물방 등록: {n_memo}".strip() if old_history else f"👉 [{now_str[:10][2:].replace('-','.')}] 매물방 등록: {n_memo}"
+                    
                     new_row = [""] * 28
                     new_row[0], new_row[1], new_row[2], new_row[3], new_row[4], new_row[6], new_row[7], new_row[8] = n_city, n_gu, n_dong, n_bon, n_bu, n_bldg, "동없음", n_room
                     new_row[9], new_row[11], new_row[12], new_row[14], new_row[18], new_row[19] = "", "", n_btype, "위반 없음", n_dep, n_rent
-                    new_row[21], new_row[22], new_row[23], new_row[24], new_row[25] = n_end, n_memo, now_str, user_name, "정상"
+                    new_row[21], new_row[22], new_row[23], new_row[24], new_row[25] = n_end, final_memo, now_str, user_name, "정상"
                     new_row[26], new_row[27] = n_tr_type, n_biz_type
                     
                     ws_data.append_row(new_row, value_input_option='USER_ENTERED')
-                    update_token(user_name, 3, f"신규 핫매물 등록 ({n_dong} {n_bon})")
+                    # 토큰 지급 로직은 제거함!
                     
                     price_s = f"{n_dep}/{n_rent}" if n_rent and n_rent != "0" else f"{n_dep}"
                     b_s = n_bldg if n_bldg else f"[{n_dong} 일반]"
@@ -249,7 +258,7 @@ if selected_tab == "🔥 실시간 매물방":
                     live_records.append(temp_live_row)
                     
                     send_kakao_live_room(f"{b_s}/{n_room}/{n_tr_type} {price_s}/{n_memo[:15]}/{n_biz_type}/{user_name}")
-                    st.cache_data.clear(); st.success("🎉 실시간 매물방 등록 완료!"); st.rerun()
+                    st.cache_data.clear(); st.success("🎉 실시간 매물방 등록 완료! (기존 DB는 정리되었습니다)"); st.rerun()
 
     if user_email in ADMIN_EMAILS:
         if st.button("🚀 단톡방에 현재 매물 리스트 전체 쏘기 (관리자 전용)"):
@@ -272,7 +281,6 @@ if selected_tab == "🔥 실시간 매물방":
             is_managed = is_managed_building(full_addr_check)
             badge = " 👑[전속관리]" if is_managed else ""
             
-            # 💡 [업데이트] 관리건물 D+ 로직 및 UI 반영
             if d_day >= 0:
                 d_color = "🟢" if d_day >= 4 else "🔴"
                 d_str = f"D-{d_day}"
