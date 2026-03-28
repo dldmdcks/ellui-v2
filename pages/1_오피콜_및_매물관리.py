@@ -177,7 +177,10 @@ st.sidebar.markdown("### 🧭 메뉴 이동")
 st.sidebar.page_link("app.py", label="홈", icon="🏠")
 st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
 st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
-st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝") # 👈 이거 추가!
+st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝")
+
+if user_email in ADMIN_EMAILS:
+    st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
 tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "👤 소유주검색", "📞 오늘의 오피콜"]
