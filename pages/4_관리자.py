@@ -43,7 +43,6 @@ staff_records, settings_all_values, history_all_values = fetch_basic_data()
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 user_email = st.session_state.user_info.get("email", "")
 
-# 🚨 [핵심 보안] 최고 관리자 계정이 아니면 강제 차단!
 if user_email not in ADMIN_EMAILS:
     st.error("🔒 접근 권한이 없습니다. 최고 관리자 전용 페이지입니다.")
     st.stop()
@@ -143,7 +142,6 @@ for r in staff_records:
     name = r['이름']
     if name in ["이응찬 대표", "곽태근 대표"]: continue
     last_shift = str(r.get('최근할당일', ''))
-    # 진행도 숫자를 직접 뽑아옴 (수정 가능하도록 세팅)
     q_done = 0 if last_shift != today_shift else (int(r.get('할당진행도', 0)) if str(r.get('할당진행도','')).isdigit() else 0)
     st_info = stats_dict.get(name, {})
     
@@ -155,7 +153,8 @@ for r in staff_records:
         "이번주 오피콜(건)": st_info["week_call"], 
         "오피스텔 갱신(누적)": st_info["op_update"], 
         "빌라 신규(누적)": st_info["villa_new"], 
-        "이번달 기여도(점)": st_info["month_score"]
+        "이번달 기여도(점)": st_info["month_score"],
+        "총 누적 기여도(점)": st_info["total_score"] # 💡 복구 완료!
     })
 
 df_admin = pd.DataFrame(admin_staff_data)
@@ -166,7 +165,7 @@ edited_staff = st.data_editor(
         "할당진행도(수정)": st.column_config.NumberColumn("할당진행도(진행건수)", min_value=0, max_value=5),
         "잔여토큰(수정)": st.column_config.NumberColumn("잔여토큰(수정가능)")
     }, 
-    disabled=["직원명", "이번주 오피콜(건)", "오피스텔 갱신(누적)", "빌라 신규(누적)", "이번달 기여도(점)"], 
+    disabled=["직원명", "이번주 오피콜(건)", "오피스텔 갱신(누적)", "빌라 신규(누적)", "이번달 기여도(점)", "총 누적 기여도(점)"], 
     hide_index=True, 
     use_container_width=True
 )
@@ -181,8 +180,8 @@ if st.button("💾 데이터 저장 (토큰/VIP/진행도 적용)", type="primar
         for i, sr in enumerate(staff_records):
             if sr['이름'] == staff_name:
                 s_idx = i + 2
-                ws_staff.update_cell(s_idx, 4, token_val)  # 토큰
-                ws_staff.update_cell(s_idx, 6, vip_val)    # VIP
-                ws_staff.update_cell(s_idx, 8, prog_val)   # 할당진행도 강제 수정
+                ws_staff.update_cell(s_idx, 4, token_val) 
+                ws_staff.update_cell(s_idx, 6, vip_val)    
+                ws_staff.update_cell(s_idx, 8, prog_val)   
                 break
     st.cache_data.clear(); st.success("저장 완료! 전사 시스템에 반영되었습니다."); st.rerun()
