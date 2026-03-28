@@ -86,6 +86,7 @@ st.sidebar.markdown("### 🧭 메뉴 이동")
 st.sidebar.page_link("app.py", label="홈", icon="🏠")
 st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
 st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
+st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝") # 👈 이거 추가!
 st.sidebar.write("---")
 
 # --- 상단 라디오 탭 ---
