@@ -12,14 +12,13 @@ from datetime import datetime, timedelta
 if "connected" not in st.session_state or not st.session_state.connected:
     st.switch_page("app.py")
 
-# 1. 페이지 설정 및 디자인
 st.set_page_config(page_title="계약보고 및 정산", page_icon="💰", layout="wide")
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
         .stButton>button { padding: 0.2rem 0.5rem; min-height: 2rem; }
         .block-container { padding-top: 3.5rem; padding-bottom: 2rem; }
-        [data-testid="stSidebarNav"] { display: none !important; } /* 회색 메뉴판 강제 숨김 */
+        [data-testid="stSidebarNav"] { display: none !important; }
         div[role="radiogroup"] { flex-direction: row; gap: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f2f6; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
@@ -32,7 +31,6 @@ KOREA_REGION_DATA = {
     "인천광역시": {"연수구": ["동춘동", "선학동", "송도동", "연수동", "옥련동", "청학동"], "부평구": ["갈산동", "구산동", "부개동", "부평동", "산곡동", "삼산동", "십정동", "일신동", "청천동"]}
 }
 
-# 2. 구글 시트 연동
 token_dict = json.loads(st.secrets["google_token_json"])
 @st.cache_resource
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
@@ -76,7 +74,6 @@ def update_token(t_name, amt, reason):
             ws_history.append_row([(datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'), t_name, amt, int(r.get('보유토큰', 0)) + amt, reason], value_input_option='USER_ENTERED')
             break
 
-# --- 🧭 사이드바 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.switch_page("app.py")
@@ -87,24 +84,20 @@ st.sidebar.page_link("app.py", label="홈", icon="🏠")
 st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
 st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
 st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝")
-
-if user_email in ADMIN_EMAILS:
-    st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
+if user_email in ADMIN_EMAILS: st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
-# --- 상단 라디오 탭 ---
 tab_names = ["✅ 계약 컨펌 요청", "✍️ 신규 계약 보고", "💰 내 정산"]
 if user_email in ADMIN_EMAILS: tab_names.append("👑 전사 대시보드")
 selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="collapsed")
 
 # ==========================================
-# 탭 1: 계약 컨펌 요청 (입금 전 승인)
+# 탭 1: 계약 컨펌 요청
 # ==========================================
 if selected_tab == "✅ 계약 컨펌 요청":
     st.title("✅ 계약 컨펌 요청 (입금 전 사전 승인)")
     st.write("아래 양식을 채워 컨펌을 요청하면 카카오워크 단톡방으로 즉시 전송됩니다.")
     
-    # 💡 [업데이트] 직관적인 2지선다 라디오 버튼으로 용도 선택
     registry_type = st.radio("📌 매물 등기 종류 선택", ["구분등기 (다세대/오피스텔/아파트 등)", "다가구/단독주택"], horizontal=True)
 
     with st.form("confirm_request_form", clear_on_submit=False):
@@ -132,7 +125,6 @@ if selected_tab == "✅ 계약 컨펌 요청":
         priority_amount = c_r1.text_input("해당연도 최우선변제금액 (0000 원단위)", placeholder="55000000")
         loan_exist = c_r2.selectbox("대출 유무", ["무", "유"])
         
-        # 💡 [업데이트] 다가구일 때만 나타나는 선순위 정보 입력칸
         senior_deposit = ""
         total_rooms = ""
         if registry_type == "다가구/단독주택":
@@ -152,20 +144,10 @@ if selected_tab == "✅ 계약 컨펌 요청":
             elif registry_type == "다가구/단독주택" and (not senior_deposit.isdigit() or not total_rooms.isdigit()): st.error("🚨 다가구 주택은 선순위 총 보증금과 총 호실 수를 숫자로 정확히 입력해야 합니다.")
             else:
                 addr_full = f"{cr_sido} {cr_gu} {dong} {bunji}{'-'+sub_dong if sub_dong else ''} {room}호".strip()
+                msg = f"[🔴 계약 컨펌 요청]\n담당자 : {user_name}\n주소 : {addr_full} [{registry_type.split(' ')[0]}]\n보/월 : {int(deposit):,}원 / {int(rent) if rent.isdigit() else 0:,}원\n최우선변제금 : {int(priority_amount):,}원\n대출유무 : {loan_exist}\n"
                 
-                # 워크 메시지 포맷 (임대인/임차인 이름 제외)
-                msg = f"[🔴 계약 컨펌 요청]\n"
-                msg += f"담당자 : {user_name}\n"
-                msg += f"주소 : {addr_full} [{registry_type.split(' ')[0]}]\n"
-                msg += f"보/월 : {int(deposit):,}원 / {int(rent) if rent.isdigit() else 0:,}원\n"
-                msg += f"최우선변제금 : {int(priority_amount):,}원\n"
-                msg += f"대출유무 : {loan_exist}\n"
-                
-                if registry_type == "다가구/단독주택":
-                    msg += f"선순위 총보증금 : {int(senior_deposit):,}원 (총 {total_rooms}호실)\n"
-                    
-                msg += f"특이사항 : {special_notes}\n"
-                msg += f"\n📢 (확인 후 등기/건축물대장을 톡방에 첨부해주세요!)"
+                if registry_type == "다가구/단독주택": msg += f"선순위 총보증금 : {int(senior_deposit):,}원 (총 {total_rooms}호실)\n"
+                msg += f"특이사항 : {special_notes}\n\n📢 (확인 후 등기/건축물대장을 톡방에 첨부해주세요!)"
                 
                 try:
                     res = requests.post("https://kakaowork.com/bots/hook/4a5be71f2c424dfa8a6926ddfbd75ebe", json={"text": msg})
@@ -231,6 +213,7 @@ elif selected_tab == "✍️ 신규 계약 보고":
             elif deal_type != "단타(임차측)" and (not landlord_name or any(char.isdigit() for char in landlord_name)): st.error("🚨 임대인 성함을 정확히 입력해주세요!")
             else:
                 bon, bu = bunji.split("-", 1) if "-" in bunji else (bunji, "0")
+                in_bu = str(bu).strip() if str(bu).strip() else "0"
                 d_dong = "동없음" if not sub_dong else (f"{sub_dong}동" if not sub_dong.endswith("동") else sub_dong)
                 r_ho = f"{room}호" if not room.endswith("호") else room
                 now_kst_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
@@ -246,35 +229,37 @@ elif selected_tab == "✍️ 신규 계약 보고":
                 else: ws_contract.append_row(create_report_row(deal_type), value_input_option='USER_ENTERED')
                 
                 try:
-                    updated = False
-                    in_dong, in_room, in_bunji = str(dong).strip(), re.sub(r'[^0-9]', '', room), f"{bon}-{bu}" if bu and bu != "0" else bon
-                    for i, r_row in enumerate(all_data_raw):
-                        if i == 0: continue
-                        r_dong, r_bon, r_bu, r_ddong, r_room = (str(r_row[2]).strip() if len(r_row)>2 else ""), (str(r_row[3]).strip() if len(r_row)>3 else ""), (str(r_row[4]).strip() if len(r_row)>4 else ""), (str(r_row[7]).strip() if len(r_row)>7 else ""), (str(r_row[8]).strip() if len(r_row)>8 else "")
-                        r_full_bunji = f"{r_bon}-{r_bu}" if r_bu and r_bu != "0" else r_bon
+                    # 💡 [업데이트] 계약 완료 시 기존 DB 비공개 처리 및 히스토리 승계
+                    in_dong, in_bon, in_room = str(dong).strip(), str(bon).strip(), re.sub(r'[^0-9]', '', str(room))
+                    old_history = ""
+                    
+                    for idx_db, r_row in enumerate(all_data_raw):
+                        if idx_db == 0: continue
+                        r_dong, r_bon, r_bu_check = str(r_row[2]).strip(), str(r_row[3]).strip(), str(r_row[4]).strip()
+                        r_room = re.sub(r'[^0-9]', '', str(r_row[8])) if len(r_row)>8 else ""
                         
-                        if r_dong == in_dong and r_full_bunji == in_bunji and str(r_ddong).replace("동","") == str(d_dong).replace("동","") and re.sub(r'[^0-9]', '', r_room) == in_room:
-                            u_idx = i + 1
-                            ws_data.update_cell(u_idx, 13, b_type); ws_data.update_cell(u_idx, 19, deposit); ws_data.update_cell(u_idx, 20, rent); ws_data.update_cell(u_idx, 22, move_out) 
-                            old_m = str(r_row[22]) if len(r_row) > 22 else ""
-                            ws_data.update_cell(u_idx, 23, f"{old_m}\n🏅[엘루이 자체계약] 👉 [{today_shift}] 📝계약완료 (보/월 {deposit}/{rent}, 만기 {move_out})\n{memo}".strip())
-                            ws_data.update_cell(u_idx, 24, now_kst_str); ws_data.update_cell(u_idx, 25, user_name)     
-                            if deal_type in ["양타", "단타(임대측)"]:
-                                ws_data.update_cell(u_idx, 10, final_name); ws_data.update_cell(u_idx, 11, final_birth); ws_data.update_cell(u_idx, 12, final_phone)
-                            updated = True; break 
-                            
-                    if not updated:
-                        new_r = [""] * 26
-                        new_r[0], new_r[1], new_r[2], new_r[3], new_r[4], new_r[7], new_r[8] = cr_sido, cr_gu, dong, bon, bu, d_dong, r_ho
-                        new_r[9], new_r[10], new_r[11], new_r[12], new_r[14] = final_name, final_birth, final_phone, b_type, "위반 없음"
-                        new_r[18], new_r[19], new_r[21], new_r[23], new_r[24], new_r[25] = deposit, rent, move_out, now_kst_str, user_name, "정상"
-                        new_r[22] = f"🏅[엘루이 자체계약] 👉 [{today_shift}] 📝신규계약 (보/월 {deposit}/{rent}, 만기 {move_out})\n{memo}"
-                        ws_data.append_row(new_r, value_input_option='USER_ENTERED')
+                        if r_dong == in_dong and r_bon == in_bon and r_bu_check == in_bu and r_room == in_room:
+                            curr_hist = str(r_row[22]).strip() if len(r_row)>22 else ""
+                            if len(curr_hist) > len(old_history): old_history = curr_hist
+                            if len(r_row) <= 25 or str(r_row[25]).strip() != "비공개":
+                                ws_data.update_cell(idx_db+1, 26, "비공개")
+                    
+                    final_memo = f"{old_history}\n🏅[엘루이 자체계약] 👉 [{today_shift}] 📝계약완료 (보/월 {deposit}/{rent}, 만기 {move_out})\n{memo}".strip()
+                    tr_type = "월세" if int(rent) > 0 else "전세"
+                    
+                    new_r = [""] * 28
+                    new_r[0], new_r[1], new_r[2], new_r[3], new_r[4], new_r[7], new_r[8] = cr_sido, cr_gu, dong, bon, bu, d_dong, r_ho
+                    new_r[9], new_r[10], new_r[11], new_r[12], new_r[14] = final_name, final_birth, final_phone, b_type, "위반 없음"
+                    new_r[18], new_r[19], new_r[21], new_r[23], new_r[24], new_r[25] = deposit, rent, move_out, now_kst_str, user_name, "정상"
+                    new_r[22] = final_memo
+                    new_r[26] = tr_type
+                    
+                    ws_data.append_row(new_r, value_input_option='USER_ENTERED')
                 except: pass
 
                 reward = 5 if deal_type == "양타" else 3
                 update_token(user_name, reward, f"계약 보고 ({deal_type})")
-                st.success(f"✨ 데이터센터 저장 및 업데이트 완료 (토큰 +{reward}개 지급)")
+                st.success(f"✨ 데이터센터 저장 및 업데이트 완료 (기존 DB 정리 완료 / 토큰 +{reward}개 지급)")
 
                 try:
                     msg_text = f"[📝 신규 계약보고] {deal_type}\n담당자 : {user_name}\n주소 : {cr_sido} {cr_gu} {dong} {bunji}번지{' '+sub_dong+'동' if sub_dong else ''} {r_ho}\n종류 : {b_type}\n보증금 : {int(deposit):,}원\n월세 : {int(rent):,}원\n잔금일 : {move_in}\n만기일 : {move_out}\n특이사항 : {memo}"
