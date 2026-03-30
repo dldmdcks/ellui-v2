@@ -156,7 +156,9 @@ def send_kakao_live_room(new_highlight_msg=""):
     if new_highlight_msg:
         msg += f"👇 [🔔 알림]\n{new_highlight_msg}"
         
-    try: requests.post("https://kakaowork.com/bots/hook/4a5be71f2c424dfa8a6926ddfbd75ebe", json={"text": msg})
+    try: 
+        # 💡 물건방 전용 웹훅으로 변경 완료!
+        requests.post("https://kakaowork.com/bots/hook/8fadfba4790e40b49281958fd256c431", json={"text": msg})
     except: pass
 
 # --- 🧭 사이드바 ---
@@ -289,7 +291,6 @@ if selected_tab == "🔥 실시간 매물방":
             st.caption(f"📝 {memo}")
             
             if registrar == user_name or has_vip:
-                # 💡 [핵심 추가] 두 개의 버튼(최신화 / 내리기)을 나란히 배치
                 c_exp1, c_exp2 = st.columns(2)
                 with c_exp1:
                     with st.expander("🔄 소유권 연장 및 최신화"):
@@ -314,9 +315,8 @@ if selected_tab == "🔥 실시간 매물방":
                                 updated_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] 매물내림: {drop_reason}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] 매물내림: {drop_reason}"
 
                                 ws_data.update_cell(row_idx, 23, updated_memo)
-                                ws_data.update_cell(row_idx, 26, "비공개") # 즉시 비공개 처리
+                                ws_data.update_cell(row_idx, 26, "비공개") 
 
-                                # 발송 전 라이브 리스트에서 해당 매물 임시 삭제
                                 live_records[:] = [x for x in live_records if x[28] != row_idx]
                                 send_kakao_live_room(f"{b_name}/{ho_str} ❌ 매물내림 ({drop_reason})/{user_name}")
                                 st.cache_data.clear(); st.rerun()
