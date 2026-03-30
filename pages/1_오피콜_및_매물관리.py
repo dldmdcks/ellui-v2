@@ -96,7 +96,11 @@ live_records = []
 expired_records = [] 
 
 for i, r in enumerate(all_data_raw[1:]):
-    if not has_vip and (r[25].strip() if len(r)>25 else "정상") in ["비공개", "삭제", "잘못됨"]: continue
+    status_val = r[25].strip() if len(r)>25 else "정상"
+    
+    # 일반 직원은 비공개 데이터를 아예 패스
+    if not has_vip and status_val in ["비공개", "삭제", "잘못됨"]: continue
+    
     rp = (r + [""]*28)[:28] + [i + 2] 
     
     d_day = -1
@@ -114,12 +118,14 @@ for i, r in enumerate(all_data_raw[1:]):
     full_addr_check = f"{str(rp[2])} {str(rp[3])}-{str(rp[4])} {str(rp[6])}"
     is_managed = is_managed_building(full_addr_check)
 
-    if is_live_format:
+    # 🚨 [강력 차단] VIP라도 '비공개' 상태면 절대 매물방(Live)에 추가하지 않음!
+    if is_live_format and status_val not in ["비공개", "삭제", "잘못됨"]:
         if is_managed: live_records.append(rp)
         else:
             if d_day >= 0: live_records.append(rp)
             elif d_day < 0 and str(rp[24]).strip(): expired_records.append(rp)
             
+    # 전체 검색용으로는 모두 담아둠 (VIP가 열람 가능하도록)
     all_records.append(rp)
 
 all_records.reverse()
@@ -157,7 +163,6 @@ def send_kakao_live_room(new_highlight_msg=""):
         msg += f"👇 [🔔 알림]\n{new_highlight_msg}"
         
     try: 
-        # 💡 물건방 전용 웹훅으로 변경 완료!
         requests.post("https://kakaowork.com/bots/hook/8fadfba4790e40b49281958fd256c431", json={"text": msg})
     except: pass
 
@@ -317,6 +322,7 @@ if selected_tab == "🔥 실시간 매물방":
                                 ws_data.update_cell(row_idx, 23, updated_memo)
                                 ws_data.update_cell(row_idx, 26, "비공개") 
 
+                                # 💡 이제 여기서 삭제하면 웹훅 발송될 때도 완벽히 빠집니다!
                                 live_records[:] = [x for x in live_records if x[28] != row_idx]
                                 send_kakao_live_room(f"{b_name}/{ho_str} ❌ 매물내림 ({drop_reason})/{user_name}")
                                 st.cache_data.clear(); st.rerun()
