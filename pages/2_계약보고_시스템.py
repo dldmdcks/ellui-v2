@@ -150,9 +150,10 @@ if selected_tab == "✅ 계약 컨펌 요청":
                 msg += f"특이사항 : {special_notes}\n\n📢 (확인 후 등기/건축물대장을 톡방에 첨부해주세요!)"
                 
                 try:
-                    res = requests.post("https://kakaowork.com/bots/hook/4a5be71f2c424dfa8a6926ddfbd75ebe", json={"text": msg})
+                    # 💡 등기컨펌방 전용 웹훅으로 변경 완료!
+                    res = requests.post("https://kakaowork.com/bots/hook/9895263a94b2468688afdf5f5858106d", json={"text": msg})
                     if res.status_code == 200:
-                        st.success("✅ 카카오워크 단톡방으로 컨펌 요청이 전송되었습니다! 아래에 등기부등본을 톡방에 첨부해주세요.")
+                        st.success("✅ 카카오워크 등기컨펌방으로 전송되었습니다! 아래에 등기부등본을 톡방에 첨부해주세요.")
                         st.balloons()
                     else: st.error(f"⚠️ 전송 실패: {res.text}")
                 except Exception as e: st.error(f"⚠️ 카카오워크 서버 통신 에러: {e}")
@@ -229,7 +230,6 @@ elif selected_tab == "✍️ 신규 계약 보고":
                 else: ws_contract.append_row(create_report_row(deal_type), value_input_option='USER_ENTERED')
                 
                 try:
-                    # 💡 [업데이트] 계약 완료 시 기존 DB 비공개 처리 및 히스토리 승계
                     in_dong, in_bon, in_room = str(dong).strip(), str(bon).strip(), re.sub(r'[^0-9]', '', str(room))
                     old_history = ""
                     
@@ -263,7 +263,8 @@ elif selected_tab == "✍️ 신규 계약 보고":
 
                 try:
                     msg_text = f"[📝 신규 계약보고] {deal_type}\n담당자 : {user_name}\n주소 : {cr_sido} {cr_gu} {dong} {bunji}번지{' '+sub_dong+'동' if sub_dong else ''} {r_ho}\n종류 : {b_type}\n보증금 : {int(deposit):,}원\n월세 : {int(rent):,}원\n잔금일 : {move_in}\n만기일 : {move_out}\n특이사항 : {memo}"
-                    res = requests.post("https://kakaowork.com/bots/hook/4a5be71f2c424dfa8a6926ddfbd75ebe", json={"text": msg_text})
+                    # 💡 계약보고방 전용 웹훅으로 변경 완료!
+                    res = requests.post("https://kakaowork.com/bots/hook/92f130bf0ad84839a15ea8337642815a", json={"text": msg_text})
                     if res.status_code == 200: st.balloons()
                 except Exception as e: st.error(f"⚠️ 카카오워크 전송 에러: {e}")
 
@@ -346,7 +347,8 @@ elif selected_tab == "💰 내 정산":
                             else:
                                 msg = f"💌 [현금영수증 발행 요청]\n담당자 : {user_name}\n주소 : {c_addr} [{d_type}]\n금액 : {int(new_fee):,}원\n\n[👤 발급 정보]\n- 이름 : {biz_name}\n- 번호 : {biz_num}"
                             try:
-                                res = requests.post("https://kakaowork.com/bots/hook/4a5be71f2c424dfa8a6926ddfbd75ebe", json={"text": msg})
+                                # 💡 계산서방 전용 웹훅으로 변경 완료!
+                                res = requests.post("https://kakaowork.com/bots/hook/22a2af5a83a4415ea19dd900cf81f799", json={"text": msg})
                                 if res.status_code == 200:
                                     ws_contract.update_cell(len(contract_all_values) - idx, 22, f"{req_type} 요청완료") 
                                     st.session_state[exp_key] = True
