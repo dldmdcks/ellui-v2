@@ -55,10 +55,15 @@ today_shift = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= 8 else (now_kst - 
 current_month_str = now_kst.strftime("%Y-%m")
 start_of_week = (now_kst - timedelta(days=now_kst.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
-try: notice_text = settings_all_values[2][1] if len(settings_all_values) > 2 else ""
+try: target_op = settings_all_values[1][1] if len(settings_all_values) > 1 and len(settings_all_values[1]) > 1 else ""
+except: target_op = ""
+try: notice_text = settings_all_values[2][1] if len(settings_all_values) > 2 and len(settings_all_values[2]) > 1 else ""
 except: notice_text = ""
-try: idpw_text = settings_all_values[3][1] if len(settings_all_values) > 3 else ""
+try: idpw_text = settings_all_values[3][1] if len(settings_all_values) > 3 and len(settings_all_values[3]) > 1 else ""
 except: idpw_text = ""
+# 💡 아파트 타겟값을 가져오는 로직 추가
+try: target_apt = settings_all_values[4][1] if len(settings_all_values) > 4 and len(settings_all_values[4]) > 1 else ""
+except: target_apt = ""
 
 # --- 🧭 사이드바 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
@@ -81,31 +86,33 @@ st.title("⚙️ 최고 관리자 사령실")
 st.write("엘루이 전사 시스템 설정 및 직원 통제 보드입니다.")
 st.write("---")
 
-col_admin1, col_admin2, col_admin3 = st.columns(3)
-with col_admin1:
+# 💡 UI를 2분할하여 오피스텔/아파트 타겟을 따로 관리
+c_set1, c_set2 = st.columns(2)
+with c_set1:
     st.subheader("📢 공지사항 설정")
     with st.form("notice_form", clear_on_submit=False):
-        new_notice = st.text_area("홈 화면 공지사항 입력", value=notice_text, height=150)
-        if st.form_submit_button("💾 공지사항 저장"):
-            ws_settings.update_cell(3, 2, new_notice)
-            st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
+        new_notice = st.text_area("홈 화면 공지사항 입력", value=notice_text, height=120)
+        if st.form_submit_button("💾 저장"):
+            ws_settings.update_cell(3, 2, new_notice); st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
 
-with col_admin2:
-    st.subheader("🎯 오피콜 타겟 설정")
-    current_target = settings_all_values[1][1] if len(settings_all_values)>1 else ""
-    with st.form("target_form", clear_on_submit=False):
-        new_target = st.text_area("타겟 주소 (쉼표 구분)", value=current_target, height=150)
-        if st.form_submit_button("💾 타겟 주소 저장"):
-            ws_settings.update_cell(2, 2, new_target)
-            st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
-            
-with col_admin3:
-    st.subheader("🔑 공용 계정(ID/PW) 설정")
+    st.subheader("🎯 오피스텔 타겟 (4건 배정)")
+    with st.form("target_op_form", clear_on_submit=False):
+        new_target_op = st.text_area("오피스텔 주소 (쉼표 구분)", value=target_op, height=120)
+        if st.form_submit_button("💾 저장"):
+            ws_settings.update_cell(2, 2, new_target_op); st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
+
+with c_set2:
+    st.subheader("🔑 공용 계정(ID/PW)")
     with st.form("idpw_form", clear_on_submit=False):
-        new_idpw = st.text_area("홈 화면 계정 정보 입력", value=idpw_text, height=150)
-        if st.form_submit_button("💾 계정 정보 저장"):
-            ws_settings.update_cell(4, 2, new_idpw)
-            st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
+        new_idpw = st.text_area("계정 정보 입력", value=idpw_text, height=120)
+        if st.form_submit_button("💾 저장"):
+            ws_settings.update_cell(4, 2, new_idpw); st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
+
+    st.subheader("🎯 아파트 타겟 (1건 배정)")
+    with st.form("target_apt_form", clear_on_submit=False):
+        new_target_apt = st.text_area("아파트 주소 (쉼표 구분)", value=target_apt, height=120, placeholder="예: 신천동 17-6")
+        if st.form_submit_button("💾 저장"):
+            ws_settings.update_cell(5, 2, new_target_apt); st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
 
 st.write("---")
 
@@ -135,7 +142,7 @@ for row in history_all_values[1:]:
     if "신규" in reason and "빌라" in reason: stats_dict[t_name]["villa_new"] += 1
 
 st.subheader("🏆 직원 통합 통제 보드 & 기여도 현황")
-st.info("직원들의 'VIP권한', '할당진행도(완료 건수)', '잔여토큰'을 직접 수정하고 저장할 수 있습니다.")
+st.info("직원들의 'VIP권한', '오늘 진행도', '잔여토큰'을 직접 수정하고 저장할 수 있습니다.")
 
 admin_staff_data = []
 for r in staff_records:
@@ -148,13 +155,13 @@ for r in staff_records:
     admin_staff_data.append({
         "직원명": name, 
         "VIP권한": str(r.get('VIP권한', 'X')) == 'O', 
-        "할당진행도(수정)": q_done, 
+        "오늘진행도(0~5)": q_done, 
         "잔여토큰(수정)": int(r.get('보유토큰', 0)), 
         "이번주 오피콜(건)": st_info["week_call"], 
         "오피스텔 갱신(누적)": st_info["op_update"], 
         "빌라 신규(누적)": st_info["villa_new"], 
         "이번달 기여도(점)": st_info["month_score"],
-        "총 누적 기여도(점)": st_info["total_score"] # 💡 복구 완료!
+        "총 누적 기여도(점)": st_info["total_score"]
     })
 
 df_admin = pd.DataFrame(admin_staff_data)
@@ -162,7 +169,7 @@ edited_staff = st.data_editor(
     df_admin, 
     column_config={
         "VIP권한": st.column_config.CheckboxColumn("VIP권한 허용"), 
-        "할당진행도(수정)": st.column_config.NumberColumn("할당진행도(진행건수)", min_value=0, max_value=5),
+        "오늘진행도(0~5)": st.column_config.NumberColumn("오늘 진행도 (0~5건)", min_value=0, max_value=5), # 💡 진행도 숫자로 명확히 표기
         "잔여토큰(수정)": st.column_config.NumberColumn("잔여토큰(수정가능)")
     }, 
     disabled=["직원명", "이번주 오피콜(건)", "오피스텔 갱신(누적)", "빌라 신규(누적)", "이번달 기여도(점)", "총 누적 기여도(점)"], 
@@ -175,7 +182,7 @@ if st.button("💾 데이터 저장 (토큰/VIP/진행도 적용)", type="primar
         staff_name = row['직원명']
         vip_val = "O" if row['VIP권한'] else "X"
         token_val = row['잔여토큰(수정)']
-        prog_val = row['할당진행도(수정)']
+        prog_val = row['오늘진행도(0~5)']
         
         for i, sr in enumerate(staff_records):
             if sr['이름'] == staff_name:
