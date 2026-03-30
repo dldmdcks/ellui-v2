@@ -61,7 +61,6 @@ try: notice_text = settings_all_values[2][1] if len(settings_all_values) > 2 and
 except: notice_text = ""
 try: idpw_text = settings_all_values[3][1] if len(settings_all_values) > 3 and len(settings_all_values[3]) > 1 else ""
 except: idpw_text = ""
-# 💡 아파트 타겟값을 가져오는 로직 추가
 try: target_apt = settings_all_values[4][1] if len(settings_all_values) > 4 and len(settings_all_values[4]) > 1 else ""
 except: target_apt = ""
 
@@ -86,7 +85,6 @@ st.title("⚙️ 최고 관리자 사령실")
 st.write("엘루이 전사 시스템 설정 및 직원 통제 보드입니다.")
 st.write("---")
 
-# 💡 UI를 2분할하여 오피스텔/아파트 타겟을 따로 관리
 c_set1, c_set2 = st.columns(2)
 with c_set1:
     st.subheader("📢 공지사항 설정")
@@ -113,6 +111,50 @@ with c_set2:
         new_target_apt = st.text_area("아파트 주소 (쉼표 구분)", value=target_apt, height=120, placeholder="예: 신천동 17-6")
         if st.form_submit_button("💾 저장"):
             ws_settings.update_cell(5, 2, new_target_apt); st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
+
+# 💡 [핵심 추가] 타겟 건물별 만기일 파악률 막대그래프!
+st.write("---")
+st.subheader("📊 타겟 건물별 만기일(오피콜) 파악 진척도")
+st.write("등록된 타겟 주소에 대해, 연락처가 있는 세대 중 **'만기일'**이 파악된(입력된) 비율을 보여줍니다.")
+
+# 타겟 주소 리스트 합치기
+target_op_list = [a.strip() for a in target_op.split(",") if a.strip()]
+target_apt_list = [a.strip() for a in target_apt.split(",") if a.strip()]
+
+ws_data = ss.get_worksheet_by_id(1969836502)
+all_data_raw = ws_data.get_all_values()
+
+target_progress = []
+for ta_raw in target_op_list + target_apt_list:
+    ta = ta_raw.replace(" ", "")
+    if not ta: continue
+    total, checked = 0, 0
+    for r in all_data_raw[1:]:
+        d_str = str(r[2]).strip()
+        b_str = str(r[3]).strip()
+        bu_str = str(r[4]).strip()
+        dong_bon_bu = (f"{d_str}{b_str}" + (f"-{bu_str}" if bu_str and bu_str != "0" else "")).replace(" ", "")
+        
+        if dong_bon_bu == ta:
+            phone = str(r[11]).strip()
+            if "연락처 없음" in phone or not phone: continue # 연락 가능한 세대만 모수(분모)로 잡음
+            total += 1
+            
+            # 만기일 파악 여부 확인 (빈칸이 아니거나 0000.00.00이 아니면 파악한 것으로 간주)
+            mangi = str(r[21]).strip()
+            if mangi and mangi != "0000.00.00" and mangi != "nan":
+                checked += 1
+    
+    if total > 0:
+        pct = int((checked / total) * 100)
+        target_progress.append({"주소": ta_raw, "전체": total, "완료": checked, "비율": pct})
+
+if not target_progress:
+    st.info("현재 분석된 타겟 진행 데이터가 없습니다.")
+else:
+    for tp in target_progress:
+        st.markdown(f"**📍 {tp['주소']}** : 총 {tp['전체']}개 중 **{tp['완료']}개 파악 완료 ({tp['비율']}%)**")
+        st.progress(tp['비율'] / 100.0)
 
 st.write("---")
 
@@ -169,7 +211,7 @@ edited_staff = st.data_editor(
     df_admin, 
     column_config={
         "VIP권한": st.column_config.CheckboxColumn("VIP권한 허용"), 
-        "오늘진행도(0~5)": st.column_config.NumberColumn("오늘 진행도 (0~5건)", min_value=0, max_value=5), # 💡 진행도 숫자로 명확히 표기
+        "오늘진행도(0~5)": st.column_config.NumberColumn("오늘 진행도 (0~5건)", min_value=0, max_value=5),
         "잔여토큰(수정)": st.column_config.NumberColumn("잔여토큰(수정가능)")
     }, 
     disabled=["직원명", "이번주 오피콜(건)", "오피스텔 갱신(누적)", "빌라 신규(누적)", "이번달 기여도(점)", "총 누적 기여도(점)"], 
