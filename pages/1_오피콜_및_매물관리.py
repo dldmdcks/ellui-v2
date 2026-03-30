@@ -73,8 +73,13 @@ else: st.error("승인되지 않은 계정입니다."); st.stop()
 
 history_records = history_all_values[1:]
 MANAGER_BUILDINGS = {b.strip(): r['이름'] for r in staff_records for b in str(r.get('관리건물', '')).split(',') if b.strip()}
-try: target_addresses = [a.strip().replace(" ", "") for a in (settings_all_values[1][1] if len(settings_all_values)>1 else "").split(",") if a.strip()]
-except: target_addresses = []
+
+# 💡 [핵심] 오피스텔 타겟과 아파트 타겟을 분리해서 가져오기
+try: target_op_list = [a.strip().replace(" ", "") for a in (settings_all_values[1][1] if len(settings_all_values)>1 and len(settings_all_values[1])>1 else "").split(",") if a.strip()]
+except: target_op_list = []
+
+try: target_apt_list = [a.strip().replace(" ", "") for a in (settings_all_values[4][1] if len(settings_all_values)>4 and len(settings_all_values[4])>1 else "").split(",") if a.strip()]
+except: target_apt_list = []
 
 def clean_numeric(t): return re.sub(r'[^0-9]', '', str(t))
 def is_valid_date(d): return bool(re.match(r'^\d{4}\.\d{2}\.\d{2}$', str(d).strip()))
@@ -97,8 +102,6 @@ expired_records = []
 
 for i, r in enumerate(all_data_raw[1:]):
     status_val = r[25].strip() if len(r)>25 else "정상"
-    
-    # 일반 직원은 비공개 데이터를 아예 패스
     if not has_vip and status_val in ["비공개", "삭제", "잘못됨"]: continue
     
     rp = (r + [""]*28)[:28] + [i + 2] 
@@ -118,35 +121,41 @@ for i, r in enumerate(all_data_raw[1:]):
     full_addr_check = f"{str(rp[2])} {str(rp[3])}-{str(rp[4])} {str(rp[6])}"
     is_managed = is_managed_building(full_addr_check)
 
-    # 🚨 [강력 차단] VIP라도 '비공개' 상태면 절대 매물방(Live)에 추가하지 않음!
     if is_live_format and status_val not in ["비공개", "삭제", "잘못됨"]:
         if is_managed: live_records.append(rp)
         else:
             if d_day >= 0: live_records.append(rp)
             elif d_day < 0 and str(rp[24]).strip(): expired_records.append(rp)
             
-    # 전체 검색용으로는 모두 담아둠 (VIP가 열람 가능하도록)
     all_records.append(rp)
 
 all_records.reverse()
-live_records.sort(key=lambda x: str(x[6])) 
+# 💡 [그룹핑 핵심] 건물명(x) -> 동+본번+부번(주소지) 우선 정렬
+live_records.sort(key=lambda x: f"{str(x[2]).strip()} {str(x[3]).strip()}-{str(x[4]).strip()}") 
 
 def send_kakao_live_room(new_highlight_msg=""):
     msg = "🔥 [실시간 엘루이 매물방 업데이트]\n\n"
     grouped = {}
     for r in live_records:
-        b_name = str(r[6]).strip() if str(r[6]).strip() else f"[{str(r[2]).strip()} 일반]"
-        if b_name not in grouped: grouped[b_name] = []
-        grouped[b_name].append(r)
+        # 💡 [그룹핑 핵심] 카톡 브리핑도 주소지(번지) 기준으로 묶기!
+        d_str, b_str, bu_str = str(r[2]).strip(), str(r[3]).strip(), str(r[4]).strip()
+        bldg_name = str(r[6]).strip()
         
-    for b_name in sorted(grouped.keys()):
+        addr_key = f"[{d_str} {b_str}" + (f"-{bu_str}" if bu_str and bu_str != "0" else "") + "]"
+        display_group_name = f"{addr_key} {bldg_name}".strip() if bldg_name else addr_key
+        
+        if display_group_name not in grouped: grouped[display_group_name] = []
+        grouped[display_group_name].append(r)
+        
+    for g_name in sorted(grouped.keys()):
         is_managed = False
         for m_bldg in MANAGER_BUILDINGS.keys():
-            if m_bldg.replace(" ","") in b_name.replace(" ",""): is_managed = True; break
-        display_b_name = f"👑전속: {b_name}" if is_managed else b_name
-        msg += f"<{display_b_name}>\n"
+            if m_bldg.replace(" ","") in g_name.replace(" ",""): is_managed = True; break
         
-        for r in grouped[b_name]:
+        final_g_name = f"👑전속: {g_name}" if is_managed else g_name
+        msg += f"<{final_g_name}>\n"
+        
+        for r in grouped[g_name]:
             ho = f"{r[7]} {r[8]}".strip().replace("동없음 ", "")
             tr_type = str(r[26])
             biz_type = str(r[27])
@@ -156,7 +165,7 @@ def send_kakao_live_room(new_highlight_msg=""):
             memo_short = str(r[22]).split('\n')[0][:15] 
             d_val = r[29]
             d_str = f"D-{d_val}" if d_val >= 0 else f"D+{-d_val} 🚨"
-            msg += f"{b_name}/{ho}/{tr_type} {price_str}/{memo_short}/{biz_type}/{r[24]}/{d_str}\n"
+            msg += f"{ho}/{tr_type} {price_str}/{memo_short}/{biz_type}/{r[24]}/{d_str}\n"
         msg += "\n"
         
     if new_highlight_msg:
@@ -255,7 +264,10 @@ if selected_tab == "🔥 실시간 매물방":
                     ws_data.append_row(new_row, value_input_option='USER_ENTERED')
                     
                     price_s = f"{n_dep}/{n_rent}" if n_rent and n_rent != "0" else f"{n_dep}"
-                    b_s = n_bldg if n_bldg else f"[{n_dong} 일반]"
+                    
+                    # 💡 웹훅 발송용 이름 조립 (번지수 기반)
+                    n_bu_str = f"-{n_bu}" if n_bu and n_bu != "0" else ""
+                    b_s = f"[{n_dong} {n_bon}{n_bu_str}] {n_bldg}".strip() if n_bldg else f"[{n_dong} {n_bon}{n_bu_str}]"
                     
                     temp_live_row = new_row.copy(); temp_live_row.append(0); temp_live_row.append(7) 
                     live_records.append(temp_live_row)
@@ -276,7 +288,10 @@ if selected_tab == "🔥 실시간 매물방":
         for r in live_records:
             city, gu, dong, bon, bu, road, bldg, d_dong, room, name, birth, phone, b_type, appr_date, viol, land_area, room_area, curr_biz, deposit, rent, fee, end_date, memo, reg_date, registrar, status, tr_type, biz_type, row_idx, d_day = r
             
-            b_name = bldg if bldg else f"[{dong} {bon}-{bu}]"
+            # 💡 [그룹핑 핵심] 웹 화면에서도 번지수를 대문짝만하게 묶어줌!
+            addr_key = f"[{dong} {bon}" + (f"-{bu}" if bu and bu != "0" else "") + "]"
+            b_name = f"{addr_key} {bldg}".strip() if bldg else addr_key
+            
             ho_str = f"{d_dong} {room}".strip().replace("동없음 ", "")
             price_str = f"{deposit} / {rent}" if rent and rent != "0" else f"{deposit}"
             
@@ -322,7 +337,6 @@ if selected_tab == "🔥 실시간 매물방":
                                 ws_data.update_cell(row_idx, 23, updated_memo)
                                 ws_data.update_cell(row_idx, 26, "비공개") 
 
-                                # 💡 이제 여기서 삭제하면 웹훅 발송될 때도 완벽히 빠집니다!
                                 live_records[:] = [x for x in live_records if x[28] != row_idx]
                                 send_kakao_live_room(f"{b_name}/{ho_str} ❌ 매물내림 ({drop_reason})/{user_name}")
                                 st.cache_data.clear(); st.rerun()
@@ -339,19 +353,38 @@ elif selected_tab == "📞 오늘의 오피콜":
 
     if quota_done >= 5 and not has_vip: st.success("🎉 오늘의 오피콜을 모두 완료했습니다!")
     
-    target_pool = [r for r in all_records if today_shift not in str(r[23]) and "연락처 없음" not in str(r[11]) and str(r[11]).strip() and next((True for ta in target_addresses if ta == (f"{r[2]}{r[3]}" + (f"-{r[4]}" if r[4] and r[4] != "0" else "")).replace(" ", "")), False)]
-    final_pool = expired_records + target_pool 
+    # 💡 [핵심] 오피스텔 풀과 아파트 풀 분리
+    op_candidates, apt_candidates = [], []
     
-    seen = set()
-    unique_pool = []
-    for r in final_pool:
-        if r[28] not in seen:
-            seen.add(r[28])
-            unique_pool.append(r)
+    for r in expired_records + all_records:
+        if today_shift in str(r[23]): continue # 오늘 이미 연락한 건 패스
+        if "연락처 없음" in str(r[11]) or not str(r[11]).strip(): continue
+        
+        dong_bon_bu = (f"{r[2]}{r[3]}" + (f"-{r[4]}" if r[4] and r[4] != "0" else "")).replace(" ", "")
+        yongdo = str(r[12]).strip()
+        
+        # 아파트 타겟 매칭
+        if yongdo == "아파트" and dong_bon_bu in target_apt_list: apt_candidates.append(r)
+        # 오피스텔 타겟 매칭 (아파트가 아닌 것들)
+        elif yongdo != "아파트" and dong_bon_bu in target_op_list: op_candidates.append(r)
+            
+    def deduplicate_pool(pool):
+        seen = set(); res = []
+        for x in pool:
+            if x[28] not in seen: seen.add(x[28]); res.append(x)
+        return res
+        
+    unique_op = deduplicate_pool(op_candidates)
+    unique_apt = deduplicate_pool(apt_candidates)
             
     my_idx = sorted([r['이름'] for r in staff_records]).index(user_name) if user_name in [r['이름'] for r in staff_records] else 0
     items_to_show = 5 if has_vip else (5 - quota_done)
-    my_assigned_pool = unique_pool[(my_idx * 5) : (my_idx * 5) + items_to_show] 
+    
+    # 💡 [오피콜 황금비율] 내 순번에 맞게 오피스텔 4개 + 아파트 1개 정확히 뽑아오기!
+    my_op = unique_op[my_idx * 4 : (my_idx * 4) + 4]
+    my_apt = unique_apt[my_idx * 1 : (my_idx * 1) + 1]
+    
+    my_assigned_pool = (my_op + my_apt)[:items_to_show]
     
     if not my_assigned_pool: st.success("🎉 배정된 타겟 명단이 모두 소진되었습니다!")
     else:
@@ -359,9 +392,10 @@ elif selected_tab == "📞 오늘의 오피콜":
             addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "")
             room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
             is_expired_target = row in expired_records
+            yongdo_badge = f"🏢[{row[12]}]" if str(row[12]) else "🏢[미상]"
             
             tag = "🔥 [폭파 매물 줍기!]" if is_expired_target else "🎯 타겟"
-            st.markdown(f"**{tag} {addr_str} {room_str}**")
+            st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
             st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
             
             if st.button("⏭️ 부재중/패스", key=f"pass_{row[28]}"):
