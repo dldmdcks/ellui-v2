@@ -339,7 +339,6 @@ if selected_tab == "🔥 실시간 매물방":
 # 탭 4: 📞 오늘의 오피콜
 # ==========================================
 elif selected_tab == "📞 오늘의 오피콜":
-    # 💡 [핵심] 대표님은 오피콜 타겟을 뺏지 않도록 화면 블라인드 처리!
     if user_email in ADMIN_EMAILS:
         st.success("👑 대표님 계정입니다! 대표님께 타겟이 배정되면 직원들 몫이 줄어들므로, 대표님 화면에서는 오피콜 리스트가 노출되지 않도록 배정을 차단(블라인드)했습니다.")
     else:
@@ -371,7 +370,6 @@ elif selected_tab == "📞 오늘의 오피콜":
         unique_op = deduplicate_pool(op_candidates)
         unique_apt = deduplicate_pool(apt_candidates)
                 
-        # 💡 일반 직원 명단에서만 순번(Index)을 계산하여 공정하게 배분!
         eligible_staff = sorted([r['이름'] for r in staff_records if r['이름'] not in ["이응찬 대표", "곽태근 대표"]])
         my_idx = eligible_staff.index(user_name) if user_name in eligible_staff else 0
         
@@ -394,7 +392,35 @@ elif selected_tab == "📞 오늘의 오피콜":
                 st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
                 st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                 
-                if st.button("⏭️ 부재중/패스", key=f"pass_{row[28]}"):
+                # 💡 [핵심 복구!] 통화 내용 입력 및 만기일 업데이트 폼 추가
+                with st.form(f"call_update_{row[28]}"):
+                    st.caption("새로 파악된 만기일이 있다면 꼭 입력해주세요! (관리자 페이지 파악률에 반영됩니다)")
+                    c_in1, c_in2, c_in3 = st.columns([1, 2, 1])
+                    new_mangi = c_in1.text_input("새로운 만기일", placeholder="2026.05.10 (선택)")
+                    new_memo = c_in2.text_input("📞 통화 결과", placeholder="통화 완료, 조건 동일 등 (필수)")
+                    
+                    if c_in3.form_submit_button("✅ 내용저장(+1)", use_container_width=True):
+                        if not new_memo:
+                            st.error("통화 결과(특이사항)를 입력하세요!")
+                        else:
+                            now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                            old_memo = str(row[22]).strip()
+                            updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
+                            
+                            ws_data.update_cell(row[28], 23, updated_memo) # 히스토리 갱신
+                            ws_data.update_cell(row[28], 24, now_str) # 최신화 날짜
+                            ws_data.update_cell(row[28], 25, user_name) # 담당자 소유권 획득
+                            
+                            # 💡 만기일을 적었다면 그것도 DB에 반영!
+                            if new_mangi:
+                                ws_data.update_cell(row[28], 22, new_mangi) 
+                            
+                            if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
+                            update_token(user_name, 1, f"오피콜 완료 ({addr_str})")
+                            st.cache_data.clear(); st.rerun()
+
+                # 단순히 전화를 안 받거나, 통화 내용은 안 적고 그냥 패스할 때 누르는 버튼
+                if st.button("⏭️ 부재중/그냥 패스 (할당량만 채우기)", key=f"pass_{row[28]}"):
                     ws_data.update_cell(row[28], 24, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'))
                     ws_data.update_cell(row[28], 25, user_name) 
                     if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
