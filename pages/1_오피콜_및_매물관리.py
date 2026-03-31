@@ -81,6 +81,7 @@ try: target_apt_list = [a.strip().replace(" ", "") for a in (settings_all_values
 except: target_apt_list = []
 
 def clean_numeric(t): return re.sub(r'[^0-9]', '', str(t))
+def is_valid_date(d): return bool(re.match(r'^\d{4}\.\d{2}\.\d{2}$', str(d).strip()))
 def update_token(t_name, amt, reason):
     if "대표" in t_name or "관리자" in t_name: return
     for i, r in enumerate(staff_records):
@@ -219,9 +220,9 @@ if selected_tab == "🔥 실시간 매물방":
             c_d1, c_d2, c_d3 = st.columns(3)
             n_dep = c_d1.text_input("보증금", placeholder="10000000")
             n_rent = c_d2.text_input("월세 (없으면 0)", placeholder="1000000")
-            n_end = c_d3.text_input("입주가능일 (YYYY.MM.DD 또는 미정시 0000.00.00)", placeholder="2026.04.00")
+            n_end = c_d3.text_input("계약 종료일 (YYYY.MM.DD 또는 0000.00.00)", placeholder="0000.00.00")
             
-            n_memo = st.text_area("특이사항")
+            n_memo = st.text_area("피드 (특이사항)")
             
             if st.form_submit_button("🚀 매물방에 등록하기", type="primary"):
                 is_duplicate = False
@@ -356,10 +357,15 @@ elif selected_tab == "📞 오늘의 오피콜":
             if "연락처 없음" in str(r[11]) or not str(r[11]).strip(): continue
             
             dong_bon_bu = (f"{r[2]}{r[3]}" + (f"-{r[4]}" if r[4] and r[4] != "0" else "")).replace(" ", "")
+            bldg = str(r[6]).replace(" ", "")
             yongdo = str(r[12]).strip()
             
-            if yongdo == "아파트" and dong_bon_bu in target_apt_list: apt_candidates.append(r)
-            elif yongdo != "아파트" and dong_bon_bu in target_op_list: op_candidates.append(r)
+            # 💡 [핵심] 주소에 타겟 이름이 포함되어 있는지 훨씬 유연하게 검사!
+            is_apt = any(ta in dong_bon_bu or ta in bldg for ta in target_apt_list)
+            is_op = any(ta in dong_bon_bu or ta in bldg for ta in target_op_list)
+            
+            if yongdo == "아파트" and is_apt: apt_candidates.append(r)
+            elif yongdo != "아파트" and is_op: op_candidates.append(r)
                 
         def deduplicate_pool(pool):
             seen = set(); res = []
@@ -375,10 +381,19 @@ elif selected_tab == "📞 오늘의 오피콜":
         
         items_to_show = 5 if has_vip else (5 - quota_done)
         
+        # 💡 오피스텔 4개, 아파트 1개 정확히 뽑아오기
         my_op = unique_op[my_idx * 4 : (my_idx * 4) + 4]
         my_apt = unique_apt[my_idx * 1 : (my_idx * 1) + 1]
         
-        my_assigned_pool = (my_op + my_apt)[:items_to_show]
+        my_assigned_pool = my_op + my_apt
+        
+        # 💡 [핵심 땜빵 로직] 아파트 타겟이 다 떨어졌으면 직원이 할당량을 채울 수 있게 오피스텔로 5개를 꽉 채워줍니다!
+        if len(my_assigned_pool) < items_to_show:
+            shortage = items_to_show - len(my_assigned_pool)
+            extra_op = unique_op[(my_idx * 4) + 4 : (my_idx * 4) + 4 + shortage]
+            my_assigned_pool += extra_op
+            
+        my_assigned_pool = my_assigned_pool[:items_to_show]
         
         if not my_assigned_pool: st.success("🎉 배정된 타겟 명단이 모두 소진되었습니다!")
         else:
@@ -390,37 +405,41 @@ elif selected_tab == "📞 오늘의 오피콜":
                 
                 tag = "🔥 [폭파 매물 줍기!]" if is_expired_target else "🎯 타겟"
                 st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
-                st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+                st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **종료일:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                 
-                # 💡 [핵심 복구!] 통화 내용 입력 및 만기일 업데이트 폼 추가
+                # 💡 [입력 폼 개선] 삐뚤어짐 없이 일자로 쫙 맞춘 폼!
                 with st.form(f"call_update_{row[28]}"):
-                    st.caption("새로 파악된 만기일이 있다면 꼭 입력해주세요! (관리자 페이지 파악률에 반영됩니다)")
-                    c_in1, c_in2, c_in3 = st.columns([1, 2, 1])
-                    new_mangi = c_in1.text_input("새로운 만기일", placeholder="2026.05.10 (선택)")
-                    new_memo = c_in2.text_input("📞 통화 결과", placeholder="통화 완료, 조건 동일 등 (필수)")
+                    st.markdown("**📝 통화 결과 입력** (종료일과 피드는 필수입니다!)")
+                    c_in1, c_in2, c_in3, c_in4, c_in5 = st.columns([1.5, 1, 1, 2.5, 1.3])
+                    new_mangi = c_in1.text_input("계약종료일", key=f"m_{row[28]}", placeholder="종료일*(0000.00.00)", label_visibility="collapsed")
+                    new_dep = c_in2.text_input("보증금", key=f"d_{row[28]}", placeholder="보증금", label_visibility="collapsed")
+                    new_rent = c_in3.text_input("월세", key=f"r_{row[28]}", placeholder="월세", label_visibility="collapsed")
+                    new_memo = c_in4.text_input("피드", key=f"f_{row[28]}", placeholder="피드*(통화결과)", label_visibility="collapsed")
                     
-                    if c_in3.form_submit_button("✅ 내용저장(+1)", use_container_width=True):
-                        if not new_memo:
-                            st.error("통화 결과(특이사항)를 입력하세요!")
+                    if c_in5.form_submit_button("✅ 내용저장(+1)", use_container_width=True):
+                        if not new_mangi or not new_memo:
+                            st.error("🚨 계약 종료일과 피드는 필수 입력입니다!")
+                        elif not is_valid_date(new_mangi):
+                            st.error("🚨 계약 종료일은 'YYYY.MM.DD' 또는 '0000.00.00' 양식으로 정확히 적어주세요!")
                         else:
                             now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                             old_memo = str(row[22]).strip()
                             updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
                             
-                            ws_data.update_cell(row[28], 23, updated_memo) # 히스토리 갱신
-                            ws_data.update_cell(row[28], 24, now_str) # 최신화 날짜
-                            ws_data.update_cell(row[28], 25, user_name) # 담당자 소유권 획득
+                            ws_data.update_cell(row[28], 22, new_mangi)
+                            ws_data.update_cell(row[28], 23, updated_memo) 
+                            ws_data.update_cell(row[28], 24, now_str) 
+                            ws_data.update_cell(row[28], 25, user_name) 
                             
-                            # 💡 만기일을 적었다면 그것도 DB에 반영!
-                            if new_mangi:
-                                ws_data.update_cell(row[28], 22, new_mangi) 
+                            if new_dep: ws_data.update_cell(row[28], 18, new_dep)
+                            if new_rent: ws_data.update_cell(row[28], 19, new_rent)
                             
                             if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
                             update_token(user_name, 1, f"오피콜 완료 ({addr_str})")
                             st.cache_data.clear(); st.rerun()
 
-                # 단순히 전화를 안 받거나, 통화 내용은 안 적고 그냥 패스할 때 누르는 버튼
-                if st.button("⏭️ 부재중/그냥 패스 (할당량만 채우기)", key=f"pass_{row[28]}"):
+                # 💡 센스 있는 문구 변경!
+                if st.button("⏭️ 부재중/다음기회에", key=f"pass_{row[28]}"):
                     ws_data.update_cell(row[28], 24, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'))
                     ws_data.update_cell(row[28], 25, user_name) 
                     if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
