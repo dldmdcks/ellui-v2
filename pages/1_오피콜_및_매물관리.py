@@ -37,30 +37,25 @@ token_dict = json.loads(st.secrets["google_token_json"])
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
 ss = get_ss()
 
-ws_data = ss.get_worksheet_by_id(1969836502)
-try: ws_staff = ss.worksheet("직원명단")
-except: pass
-try: ws_history = ss.worksheet("토큰내역")
-except: pass
-try: ws_settings = ss.worksheet("환경설정")
-except: pass
-
-# 💡 새 탭 연동
-try: ws_building = ss.worksheet("건물정보")
-except: ws_building = None
-try: ws_exp = ss.worksheet("경험치북")
-except: ws_exp = None
-
 @st.cache_data(ttl=30)
 def fetch_all_data(): 
-    return (ws_data.get_all_values(), 
-            ws_staff.get_all_records(), 
-            ws_history.get_all_values(), 
-            ws_settings.get_all_values(),
-            ws_building.get_all_values() if ws_building else [],
-            ws_exp.get_all_values() if ws_exp else [])
+    ws_data = ss.get_worksheet_by_id(1969836502)
+    try: ws_staff = ss.worksheet("직원명단")
+    except: ws_staff = None
+    try: ws_history = ss.worksheet("토큰내역")
+    except: ws_history = None
+    try: ws_settings = ss.worksheet("환경설정")
+    except: ws_settings = None
+    try: ws_b = ss.worksheet("건물정보")
+    except: ws_b = None
+    
+    return (ws_data.get_all_values() if ws_data else [], 
+            ws_staff.get_all_records() if ws_staff else [], 
+            ws_history.get_all_values() if ws_history else [], 
+            ws_settings.get_all_values() if ws_settings else [],
+            ws_b.get_all_values() if ws_b else [])
 
-all_data_raw, staff_records, history_all_values, settings_all_values, bldg_all_values, exp_all_values = fetch_all_data()
+all_data_raw, staff_records, history_all_values, settings_all_values, bldg_all_values = fetch_all_data()
 
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 user_email = st.session_state.user_info.get("email", "")
@@ -72,6 +67,7 @@ if user_email in staff_dict:
     user_name = staff_dict[user_email]['이름']
     user_tokens = int(staff_dict[user_email].get('보유토큰', 0))
     staff_row_index = list(staff_dict.keys()).index(user_email) + 2 
+    ws_staff = ss.worksheet("직원명단")
     
     last_shift = str(staff_dict[user_email].get('최근할당일', ''))
     if last_shift != today_shift:
@@ -86,7 +82,7 @@ elif user_email in ADMIN_EMAILS:
     user_tokens, is_locked, has_vip, quota_done = 9999, False, True, 5
 else: st.error("승인되지 않은 계정입니다."); st.stop()
 
-history_records = history_all_values[1:]
+history_records = history_all_values[1:] if len(history_all_values) > 1 else []
 MANAGER_BUILDINGS = {b.strip(): r['이름'] for r in staff_records for b in str(r.get('관리건물', '')).split(',') if b.strip()}
 
 try: target_op_list = [a.strip().replace(" ", "") for a in (settings_all_values[1][1] if len(settings_all_values)>1 and len(settings_all_values[1])>1 else "").split(",") if a.strip()]
@@ -99,10 +95,12 @@ def clean_numeric(t): return re.sub(r'[^0-9]', '', str(t))
 def is_valid_date(d): return bool(re.match(r'^\d{4}\.\d{2}\.\d{2}$', str(d).strip()))
 def update_token(t_name, amt, reason):
     if "대표" in t_name or "관리자" in t_name: return
+    try: ws_h = ss.worksheet("토큰내역"); ws_s = ss.worksheet("직원명단")
+    except: return
     for i, r in enumerate(staff_records):
         if r['이름'] == t_name:
-            ws_staff.update_cell(i + 2, 4, int(r.get('보유토큰', 0)) + amt)
-            ws_history.append_row([(datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'), t_name, amt, int(r.get('보유토큰', 0)) + amt, reason], value_input_option='USER_ENTERED')
+            ws_s.update_cell(i + 2, 4, int(r.get('보유토큰', 0)) + amt)
+            ws_h.append_row([(datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'), t_name, amt, int(r.get('보유토큰', 0)) + amt, reason], value_input_option='USER_ENTERED')
             break
 
 def is_managed_building(addr_str):
@@ -114,42 +112,41 @@ all_records = []
 live_records = [] 
 expired_records = [] 
 
-for i, r in enumerate(all_data_raw[1:]):
-    status_val = r[25].strip() if len(r)>25 else "정상"
-    if not has_vip and status_val in ["비공개", "삭제", "잘못됨"]: continue
-    
-    rp = (r + [""]*28)[:28] + [i + 2] 
-    
-    d_day = -1
-    try:
-        reg_dt = datetime.strptime(str(rp[23]).replace("'", ""), '%Y-%m-%d %H:%M:%S')
-        days_passed = (now_kst - reg_dt).days
-        d_day = 7 - days_passed
-    except: pass
-    rp.append(d_day) 
+if len(all_data_raw) > 1:
+    for i, r in enumerate(all_data_raw[1:]):
+        status_val = r[25].strip() if len(r)>25 else "정상"
+        if not has_vip and status_val in ["비공개", "삭제", "잘못됨"]: continue
+        
+        rp = (r + [""]*28)[:28] + [i + 2] 
+        
+        d_day = -1
+        try:
+            reg_dt = datetime.strptime(str(rp[23]).replace("'", ""), '%Y-%m-%d %H:%M:%S')
+            days_passed = (now_kst - reg_dt).days
+            d_day = 7 - days_passed
+        except: pass
+        rp.append(d_day) 
 
-    tr_type = str(rp[26]).strip()
-    biz_type = str(rp[27]).strip()
-    yongdo = str(rp[12]).strip()
-    is_live_format = tr_type in ["전세", "월세", "단기임대", "매매"]
-    
-    full_addr_check = f"{str(rp[2])} {str(rp[3])}-{str(rp[4])} {str(rp[6])}"
-    is_managed = is_managed_building(full_addr_check)
+        tr_type = str(rp[26]).strip()
+        yongdo = str(rp[12]).strip()
+        is_live_format = tr_type in ["전세", "월세", "단기임대", "매매"]
+        
+        full_addr_check = f"{str(rp[2])} {str(rp[3])}-{str(rp[4])} {str(rp[6])}"
+        is_managed = is_managed_building(full_addr_check)
 
-    if is_live_format and status_val not in ["비공개", "삭제", "잘못됨"]:
-        # 💡 상가/빌라/건물은 7일이 지나도 무조건 방어!
-        if is_managed or yongdo in ["빌라", "상가", "다세대", "다가구"]: 
-            live_records.append(rp)
-        else:
-            if d_day >= 0: live_records.append(rp)
-            elif d_day < 0 and str(rp[24]).strip(): expired_records.append(rp)
-            
-    all_records.append(rp)
+        if is_live_format and status_val not in ["비공개", "삭제", "잘못됨"]:
+            if is_managed or yongdo in ["빌라", "상가", "다세대", "다가구"]: 
+                live_records.append(rp)
+            else:
+                if d_day >= 0: live_records.append(rp)
+                elif d_day < 0 and str(rp[24]).strip(): expired_records.append(rp)
+                
+        all_records.append(rp)
 
 all_records.reverse()
 live_records.sort(key=lambda x: f"{str(x[2]).strip()} {str(x[3]).strip()}-{str(x[4]).strip()}") 
 
-# 💡 라이브 매물 3단 분류 (오피 / 아파트 / 기타상가빌라)
+# 3단 분류
 op_live, apt_live, etc_live = [], [], []
 for r in live_records:
     yd = str(r[12]).strip()
@@ -193,10 +190,10 @@ def send_kakao_live_room(new_highlight_msg=""):
     if new_highlight_msg:
         full_msg += f"\n👇 [🔔 실시간 알림]\n{new_highlight_msg}"
         
-    try: 
-        requests.post("https://kakaowork.com/bots/hook/8fadfba4790e40b49281958fd256c431", json={"text": full_msg})
+    try: requests.post("https://kakaowork.com/bots/hook/8fadfba4790e40b49281958fd256c431", json={"text": full_msg})
     except: pass
 
+# --- 🧭 사이드바 (메뉴 독립) ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.switch_page("app.py")
@@ -207,11 +204,12 @@ st.sidebar.page_link("app.py", label="홈", icon="🏠")
 st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물/DB", icon="🔍")
 st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약정산", icon="💰")
 st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝")
+st.sidebar.page_link("pages/5_경험치북.py", label="경험치북", icon="📖")  # 💡 경험치북 메뉴 독립 추가!
 if user_email in ADMIN_EMAILS: st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
-# 💡 새 탭 구조
-tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "🏢 오피스텔 정보", "📖 경험치북", "👤 소유주검색", "📞 오늘의 오피콜"]
+# 경험치북을 탭에서 제거
+tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "🏢 건물 정보", "👤 소유주검색", "📞 오늘의 오피콜"]
 if has_vip: tab_names.append("⏰ VIP만기")
 selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="collapsed")
 
@@ -221,6 +219,7 @@ selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="
 if selected_tab == "🔥 실시간 매물방":
     st.title("🔥 실시간 매물방 (Live)")
     st.write("새로 등록한 매물만 표시되며, 카톡 워크로 연동됩니다.")
+    ws_data = ss.get_worksheet_by_id(1969836502)
     
     with st.expander("➕ [신규 매물 등록] 매물방에 띄우기 (DB 연동)", expanded=False):
         reg_type = st.radio("어떤 매물인가요?", ["🏢 일반 오피스텔/아파트", "🏘️ 빌라/상가/기타(관리건물)"], horizontal=True)
@@ -335,6 +334,7 @@ if selected_tab == "🔥 실시간 매물방":
                             if st.form_submit_button("최신화(+1)"):
                                 now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                                 up_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
+                                ws_data = ss.get_worksheet_by_id(1969836502)
                                 ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 24, now_str) 
                                 update_token(user_name, 1, f"매물 최신화 ({b_name} {ho_str})")
                                 send_kakao_live_room(f"{b_name}/{ho_str}/[갱신] {new_memo}/{user_name}")
@@ -346,7 +346,16 @@ if selected_tab == "🔥 실시간 매물방":
                             if st.form_submit_button("내리기"):
                                 now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                                 up_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] 내림: {drop_reason}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] 내림: {drop_reason}"
+                                ws_data = ss.get_worksheet_by_id(1969836502)
                                 ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 26, "비공개") 
+                                
+                                # 💡 [내리기 버그 완벽 수정] 
+                                # 데이터베이스 업데이트 후, 카톡을 쏘기 전에 '배열(op_live 등)'에서 해당 매물을 즉시 삭제합니다!
+                                op_live[:] = [x for x in op_live if x[28] != row_idx]
+                                apt_live[:] = [x for x in apt_live if x[28] != row_idx]
+                                etc_live[:] = [x for x in etc_live if x[28] != row_idx]
+                                live_records[:] = [x for x in live_records if x[28] != row_idx]
+                                
                                 send_kakao_live_room(f"{b_name}/{ho_str} ❌ 내림({drop_reason})/{user_name}")
                                 st.cache_data.clear(); st.rerun()
             st.write("---")
@@ -398,14 +407,12 @@ elif selected_tab == "🔍 전체검색":
                     if b_search and b_search.replace(" ","") not in addr_combined: continue
                     if r_search and r_search.replace(" ","") not in (str(r[7])+str(r[8])).replace(" ",""): continue
                     
-                    # 💡 금액 필터링 로직
                     dep_val = int(clean_numeric(r[18])) // 10000 if clean_numeric(r[18]) else 0
                     rent_val = int(clean_numeric(r[19])) // 10000 if clean_numeric(r[19]) else 0
                     if not (min_dep <= dep_val <= max_dep): continue
                     if not (min_rent <= rent_val <= max_rent): continue
                     
                     memo_text = str(r[22]).replace(" ", "")
-                    # 💡 애완가능 필터 (메모에 애완/반려/강아지/고양이가 있고 '불가/안됨'이 없거나 명시적으로 '가능/O' 인 경우)
                     if pet_ok:
                         has_pet_kw = any(k in memo_text for k in ["애완", "반려", "동물", "강아지", "고양이", "펫"])
                         has_no_kw = any(k in memo_text for k in ["불가", "안됨", "x", "금지"])
@@ -413,7 +420,6 @@ elif selected_tab == "🔍 전체검색":
                             continue
                             
                     if kw_search and kw_search.replace(" ", "") not in memo_text: continue
-                    
                     res.append(r)
                     
                 st.session_state.addr_search_res = sorted(res, key=lambda x: int(clean_numeric(x[8])) if clean_numeric(x[8]) else 9999)
@@ -442,14 +448,17 @@ elif selected_tab == "🔍 전체검색":
 # ==========================================
 # 탭 3: 🏢 건물 정보 (비밀수첩)
 # ==========================================
-elif selected_tab == "🏢 오피스텔 정보":
+elif selected_tab == "🏢 건물 정보":
     st.title("🏢 건물 비밀수첩")
     st.write("각 건물의 관리실 번호, 공동현관 및 화장실 비밀번호를 모아두는 곳입니다.")
     
+    try: ws_building = ss.worksheet("건물정보")
+    except: ws_building = None
+    
     if ws_building is None:
-        st.error("🚨 구글 마스터 시트에 **'건물정보'** 탭이 없습니다! 시트 하단에서 [+] 버튼을 눌러 탭을 생성해주세요.")
+        st.error("🚨 구글 마스터 시트에 **'건물정보'** 탭이 없습니다! 구글 시트 하단에서 [+] 버튼을 눌러 탭을 생성해주세요.")
     else:
-        with st.expander("➕ 새로운 건물 정보 등록"):
+        with st.expander("➕ 새로운 건물 정보 등록", expanded=False):
             with st.form("add_bldg"):
                 b_name = st.text_input("건물명 (예: 엘루이시티)")
                 b_mgmt = st.text_input("관리실 번호")
@@ -463,68 +472,25 @@ elif selected_tab == "🏢 오피스텔 정보":
                         st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
                         
         st.write("---")
-        search_bldg = st.text_input("🔍 건물명 검색")
+        search_bldg = st.text_input("🔍 건물명 검색 (비워두면 전체 표시)")
         
-        for r in bldg_all_values[1:]: # 첫 줄은 헤더 가정
-            if len(r) < 4: continue
+        # 💡 [건물정보 노출 버그 완벽 수정] 빈 줄이거나 첫 줄이 제목이면 패스하되, 정상 등록건은 무조건 즉시 나옵니다!
+        has_data = False
+        for r in reversed(bldg_all_values):
+            if not r or r[0] == "건물명": continue
+            if len(r) < 2: continue
             if search_bldg and search_bldg not in r[0]: continue
+            
+            has_data = True
             st.markdown(f"### 📍 {r[0]}")
-            st.info(f"**📞 관리실:** {r[1]} | **🔑 1층 비번:** {r[2]} | **🚽 화장실:** {r[3]}\n\n**📝 비고:** {r[6] if len(r)>6 else ''} \n\n*(작성: {r[4] if len(r)>4 else ''})*")
+            st.info(f"**📞 관리실:** {r[1]} | **🔑 1층 비번:** {r[2] if len(r)>2 else ''} | **🚽 화장실:** {r[3] if len(r)>3 else ''}\n\n**📝 비고:** {r[6] if len(r)>6 else ''} \n\n*(작성: {r[4] if len(r)>4 else ''})*")
             st.write("---")
+            
+        if not has_data:
+            st.info("아직 등록된 건물 정보가 없거나, 검색 결과가 없습니다.")
 
 # ==========================================
-# 탭 4: 📖 경험치북 (사내 지식인)
-# ==========================================
-elif selected_tab == "📖 경험치북":
-    st.title("📖 엘루이 경험치북")
-    st.write("중개 사고 예방 및 꿀팁! 선배들의 노하우를 검색하고 댓글(피드)로 이력을 남기세요.")
-    
-    if ws_exp is None:
-        st.error("🚨 구글 마스터 시트에 **'경험치북'** 탭이 없습니다! 시트 하단에서 [+] 버튼을 눌러 탭을 생성해주세요.")
-    else:
-        with st.expander("✍️ 새로운 지식/판례 등록하기"):
-            with st.form("add_exp"):
-                e_title = st.text_input("제목 (어떤 상황이었나요?)")
-                e_body = st.text_area("상세 내용 및 해결 방법")
-                if st.form_submit_button("등록하기"):
-                    if not e_title: st.error("제목을 입력하세요.")
-                    else:
-                        new_id = len(exp_all_values) + 1
-                        ws_exp.append_row([new_id, e_title, e_body, user_name, today_shift, "[]"], value_input_option='USER_ENTERED')
-                        st.cache_data.clear(); st.success("등록 완료!"); st.rerun()
-        
-        st.write("---")
-        search_exp = st.text_input("🔍 지식 검색 (키워드 입력)")
-        
-        for i, r in enumerate(reversed(exp_all_values[1:])):
-            if len(r) < 5: continue
-            idx = len(exp_all_values) - 1 - i # 원래 행 번호
-            title, body, author, date = r[1], r[2], r[3], r[4]
-            comments_str = r[5] if len(r)>5 else "[]"
-            
-            if search_exp and search_exp not in title and search_exp not in body and search_exp not in comments_str: continue
-            
-            try: comments = json.loads(comments_str)
-            except: comments = []
-            
-            with st.expander(f"📌 {title} (댓글: {len(comments)}개) - {author}"):
-                st.write(body)
-                st.caption(f"작성일: {date}")
-                st.write("---")
-                st.markdown("**💬 해결 과정 및 피드백**")
-                for c in comments:
-                    st.info(f"**{c.get('author','')}** ({c.get('date','')}): {c.get('text','')}")
-                    
-                with st.form(f"comment_form_{idx}"):
-                    c_text = st.text_input("댓글(피드) 달기")
-                    if st.form_submit_button("등록"):
-                        if c_text:
-                            comments.append({"author": user_name, "date": today_shift, "text": c_text})
-                            ws_exp.update_cell(idx + 1, 6, json.dumps(comments))
-                            st.cache_data.clear(); st.rerun()
-
-# ==========================================
-# 탭 6: 📞 오늘의 오피콜
+# 탭 4: 📞 오늘의 오피콜
 # ==========================================
 elif selected_tab == "📞 오늘의 오피콜":
     if user_email in ADMIN_EMAILS:
@@ -543,7 +509,6 @@ elif selected_tab == "📞 오늘의 오피콜":
             if today_shift in str(r[23]): continue 
             if "연락처 없음" in str(r[11]) or not str(r[11]).strip(): continue
             
-            # 💡 [버그 픽스] 아파트 주소 매칭 로직을 훨씬 유연하게 강화!
             dong = str(r[2]).strip()
             bon = str(r[3]).strip()
             bu = str(r[4]).strip()
@@ -576,13 +541,14 @@ elif selected_tab == "📞 오늘의 오피콜":
         
         my_assigned_pool = my_op + my_apt
         
-        # 💡 [땜빵 로직] 아파트가 없으면 오피스텔로 할당량 5개 강제 채우기
         if len(my_assigned_pool) < items_to_show:
             shortage = items_to_show - len(my_assigned_pool)
             extra_op = unique_op[(my_idx * 4) + 4 : (my_idx * 4) + 4 + shortage]
             my_assigned_pool += extra_op
             
         my_assigned_pool = my_assigned_pool[:items_to_show]
+        
+        ws_data = ss.get_worksheet_by_id(1969836502)
         
         if not my_assigned_pool: st.success("🎉 배정된 타겟 명단이 모두 소진되었습니다!")
         else:
@@ -596,7 +562,6 @@ elif selected_tab == "📞 오늘의 오피콜":
                 st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
                 st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **종료일:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                 
-                # 💡 [완벽 폼] 일자 가로 정렬, 필수값 체크, 버튼 이름 변경!
                 with st.form(f"call_update_{row[28]}"):
                     st.markdown("**📝 통화 결과 입력** (* 표시 항목은 필수입니다)")
                     c_in1, c_in2, c_in3, c_in4, c_in5 = st.columns([1.5, 1, 1, 2.5, 1.3])
