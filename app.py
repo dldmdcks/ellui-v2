@@ -4,9 +4,10 @@ from google.oauth2.credentials import Credentials
 import json
 import requests
 from datetime import datetime, timedelta
+import extra_streamlit_components as stx  # 💡 쿠키 도구 추가!
 
-# 1. 페이지 설정 및 디자인
-st.set_page_config(page_title="엘루이 업무포털", page_icon="🏢", layout="wide")
+# 1. 페이지 설정 및 디자인 (💡 사이드바 강제 고정 세팅!)
+st.set_page_config(page_title="엘루이 업무포털", page_icon="🏢", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
@@ -19,6 +20,12 @@ st.markdown("""
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
+# 💡 [핵심] 쿠키 매니저 로딩 (브라우저에 도장 쾅!)
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+cookie_manager = get_cookie_manager()
+
 # 2. 구글 로그인 및 보안
 try:
     creds_dict = json.loads(st.secrets["credentials_json"])
@@ -26,23 +33,40 @@ try:
     CLIENT_ID = creds_dict["web"]["client_id"]
     CLIENT_SECRET = creds_dict["web"]["client_secret"]
     REDIRECT_URI = creds_dict["web"]["redirect_uris"][0]
-except: st.error("❌ 금고 설정(Secrets) 확인 요망!"); st.stop()
+except: 
+    st.error("❌ 금고 설정(Secrets) 확인 요망!")
+    st.stop()
 
-if 'connected' not in st.session_state: st.session_state.connected = False
+if 'connected' not in st.session_state: 
+    st.session_state.connected = False
+
 query_params = st.query_params
+
+# 💡 1순위: 쿠키 확인 (도장이 있으면 구글 로그인 건너뛰고 프리패스!)
+cached_email = cookie_manager.get(cookie="ellui_user_email")
+if cached_email and not st.session_state.connected:
+    st.session_state.connected = True
+    st.session_state.user_info = {"email": cached_email}
 
 if "session_token" in query_params and not st.session_state.connected:
     access_token = query_params["session_token"]
     user_info = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {access_token}"}).json()
-    if "email" in user_info: st.session_state.connected, st.session_state.user_info = True, user_info
+    if "email" in user_info: 
+        st.session_state.connected = True
+        st.session_state.user_info = user_info
+        cookie_manager.set("ellui_user_email", user_info["email"], expires_at=datetime.now() + timedelta(days=30))
 
 if "code" in query_params and not st.session_state.connected:
     res = requests.post("https://oauth2.googleapis.com/token", data={"code": query_params["code"], "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "redirect_uri": REDIRECT_URI, "grant_type": "authorization_code"}).json()
     if "access_token" in res:
-        st.session_state.connected = True
-        st.session_state.user_info = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {res['access_token']}"}).json()
-        st.query_params["session_token"] = res['access_token']
-        st.rerun()
+        user_info = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {res['access_token']}"}).json()
+        if "email" in user_info:
+            st.session_state.connected = True
+            st.session_state.user_info = user_info
+            # 💡 로그인 성공 시 30일짜리 쿠키 저장!
+            cookie_manager.set("ellui_user_email", user_info["email"], expires_at=datetime.now() + timedelta(days=30))
+            st.query_params.clear()
+            st.rerun()
 
 if not st.session_state.connected:
     st.warning("🔒 엘루이 매물관리 시스템입니다. 구글 계정으로 본인인증 후 이용해주세요.")
@@ -78,16 +102,20 @@ else:
 # --- 사이드바 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
-if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.rerun()
+if st.sidebar.button("로그아웃"): 
+    cookie_manager.delete("ellui_user_email") # 💡 로그아웃 시 쿠키 완벽 파기
+    st.query_params.clear()
+    st.session_state.clear()
+    st.rerun()
 st.sidebar.write("---")
 
 st.sidebar.markdown("### 🧭 메뉴 이동")
 st.sidebar.page_link("app.py", label="홈", icon="🏠")
-st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
-st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
+st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물/DB", icon="🔍")
+st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약정산", icon="💰")
 st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝")
+st.sidebar.page_link("pages/5_경험치북.py", label="경험치북", icon="📖")
 
-# 💡 [핵심] 관리자 계정일 때만 사이드바에 '관리자' 메뉴 표시!
 if user_email in ADMIN_EMAILS:
     st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
