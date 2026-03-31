@@ -20,6 +20,7 @@ st.markdown("""
         [data-testid="stSidebarNav"] { display: none !important; }
         div[role="radiogroup"] { flex-direction: row; gap: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f2f6; margin-bottom: 20px; }
         .live-card { background-color: #f8f9fa; border-left: 4px solid #00c853; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+        .stNumberInput input { padding: 0.2rem 0.5rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -35,6 +36,7 @@ token_dict = json.loads(st.secrets["google_token_json"])
 @st.cache_resource
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
 ss = get_ss()
+
 ws_data = ss.get_worksheet_by_id(1969836502)
 try: ws_staff = ss.worksheet("직원명단")
 except: pass
@@ -43,9 +45,22 @@ except: pass
 try: ws_settings = ss.worksheet("환경설정")
 except: pass
 
+# 💡 새 탭 연동
+try: ws_building = ss.worksheet("건물정보")
+except: ws_building = None
+try: ws_exp = ss.worksheet("경험치북")
+except: ws_exp = None
+
 @st.cache_data(ttl=30)
-def fetch_all_data(): return ws_data.get_all_values(), ws_staff.get_all_records(), ws_history.get_all_values(), ws_settings.get_all_values()
-all_data_raw, staff_records, history_all_values, settings_all_values = fetch_all_data()
+def fetch_all_data(): 
+    return (ws_data.get_all_values(), 
+            ws_staff.get_all_records(), 
+            ws_history.get_all_values(), 
+            ws_settings.get_all_values(),
+            ws_building.get_all_values() if ws_building else [],
+            ws_exp.get_all_values() if ws_exp else [])
+
+all_data_raw, staff_records, history_all_values, settings_all_values, bldg_all_values, exp_all_values = fetch_all_data()
 
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 user_email = st.session_state.user_info.get("email", "")
@@ -115,13 +130,16 @@ for i, r in enumerate(all_data_raw[1:]):
 
     tr_type = str(rp[26]).strip()
     biz_type = str(rp[27]).strip()
+    yongdo = str(rp[12]).strip()
     is_live_format = tr_type in ["전세", "월세", "단기임대", "매매"]
     
     full_addr_check = f"{str(rp[2])} {str(rp[3])}-{str(rp[4])} {str(rp[6])}"
     is_managed = is_managed_building(full_addr_check)
 
     if is_live_format and status_val not in ["비공개", "삭제", "잘못됨"]:
-        if is_managed: live_records.append(rp)
+        # 💡 상가/빌라/건물은 7일이 지나도 무조건 방어!
+        if is_managed or yongdo in ["빌라", "상가", "다세대", "다가구"]: 
+            live_records.append(rp)
         else:
             if d_day >= 0: live_records.append(rp)
             elif d_day < 0 and str(rp[24]).strip(): expired_records.append(rp)
@@ -131,31 +149,31 @@ for i, r in enumerate(all_data_raw[1:]):
 all_records.reverse()
 live_records.sort(key=lambda x: f"{str(x[2]).strip()} {str(x[3]).strip()}-{str(x[4]).strip()}") 
 
-def send_kakao_live_room(new_highlight_msg=""):
-    msg = "🔥 [실시간 엘루이 매물방 업데이트]\n\n"
+# 💡 라이브 매물 3단 분류 (오피 / 아파트 / 기타상가빌라)
+op_live, apt_live, etc_live = [], [], []
+for r in live_records:
+    yd = str(r[12]).strip()
+    if yd == "오피스텔": op_live.append(r)
+    elif yd == "아파트": apt_live.append(r)
+    else: etc_live.append(r)
+
+def build_kakao_msg_for_group(group_list, group_title):
+    if not group_list: return ""
+    msg = f"━━━━━━━━━━━━━━\n🌟 [{group_title} 핫매물]\n━━━━━━━━━━━━━━\n\n"
     grouped = {}
-    for r in live_records:
+    for r in group_list:
         d_str, b_str, bu_str = str(r[2]).strip(), str(r[3]).strip(), str(r[4]).strip()
         bldg_name = str(r[6]).strip()
-        
         addr_key = f"[{d_str} {b_str}" + (f"-{bu_str}" if bu_str and bu_str != "0" else "") + "]"
         display_group_name = f"{addr_key} {bldg_name}".strip() if bldg_name else addr_key
-        
         if display_group_name not in grouped: grouped[display_group_name] = []
         grouped[display_group_name].append(r)
         
     for g_name in sorted(grouped.keys()):
-        is_managed = False
-        for m_bldg in MANAGER_BUILDINGS.keys():
-            if m_bldg.replace(" ","") in g_name.replace(" ",""): is_managed = True; break
-        
-        final_g_name = f"👑전속: {g_name}" if is_managed else g_name
-        msg += f"<{final_g_name}>\n"
-        
+        msg += f"<{g_name}>\n"
         for r in grouped[g_name]:
             ho = f"{r[7]} {r[8]}".strip().replace("동없음 ", "")
-            tr_type = str(r[26])
-            biz_type = str(r[27])
+            tr_type = str(r[26]); biz_type = str(r[27])
             dep = int(clean_numeric(r[18])) if clean_numeric(r[18]) else 0
             rent = int(clean_numeric(r[19])) if clean_numeric(r[19]) else 0
             price_str = f"{dep},{rent}" if rent > 0 else f"{dep}"
@@ -164,12 +182,19 @@ def send_kakao_live_room(new_highlight_msg=""):
             d_str = f"D-{d_val}" if d_val >= 0 else f"D+{-d_val} 🚨"
             msg += f"{ho}/{tr_type} {price_str}/{memo_short}/{biz_type}/{r[24]}/{d_str}\n"
         msg += "\n"
-        
+    return msg
+
+def send_kakao_live_room(new_highlight_msg=""):
+    full_msg = "🔥 [실시간 엘루이 매물방 업데이트]\n\n"
+    full_msg += build_kakao_msg_for_group(op_live, "오피스텔")
+    full_msg += build_kakao_msg_for_group(apt_live, "아파트")
+    full_msg += build_kakao_msg_for_group(etc_live, "빌라/상가/전속건물")
+    
     if new_highlight_msg:
-        msg += f"👇 [🔔 알림]\n{new_highlight_msg}"
+        full_msg += f"\n👇 [🔔 실시간 알림]\n{new_highlight_msg}"
         
     try: 
-        requests.post("https://kakaowork.com/bots/hook/8fadfba4790e40b49281958fd256c431", json={"text": msg})
+        requests.post("https://kakaowork.com/bots/hook/8fadfba4790e40b49281958fd256c431", json={"text": full_msg})
     except: pass
 
 st.sidebar.markdown(f"### 👤 {user_name}")
@@ -179,13 +204,14 @@ st.sidebar.write("---")
 
 st.sidebar.markdown("### 🧭 메뉴 이동")
 st.sidebar.page_link("app.py", label="홈", icon="🏠")
-st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
-st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
+st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물/DB", icon="🔍")
+st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약정산", icon="💰")
 st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝")
 if user_email in ADMIN_EMAILS: st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
-tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "👤 소유주검색", "📞 오늘의 오피콜"]
+# 💡 새 탭 구조
+tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "🏢 오피스텔 정보", "📖 경험치북", "👤 소유주검색", "📞 오늘의 오피콜"]
 if has_vip: tab_names.append("⏰ VIP만기")
 selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="collapsed")
 
@@ -194,15 +220,15 @@ selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="
 # ==========================================
 if selected_tab == "🔥 실시간 매물방":
     st.title("🔥 실시간 매물방 (Live)")
-    st.write("새로 등록한 알짜 매물만 표시되며, 워크로 자동 연동됩니다. (일반 매물 7일 경과 시 자동 폭파)")
+    st.write("새로 등록한 매물만 표시되며, 카톡 워크로 연동됩니다.")
     
-    with st.expander("➕ [신규 등록] 매물방 띄우기 (DB 연동)", expanded=False):
+    with st.expander("➕ [신규 매물 등록] 매물방에 띄우기 (DB 연동)", expanded=False):
+        reg_type = st.radio("어떤 매물인가요?", ["🏢 일반 오피스텔/아파트", "🏘️ 빌라/상가/기타(관리건물)"], horizontal=True)
+        
         with st.form("new_data_form", clear_on_submit=True):
-            st.info("이곳에서 등록한 매물만 아래 매물방 리스트와 단톡방에 표시됩니다.")
             c_reg1, c_reg2, c_reg3 = st.columns(3)
             n_city = c_reg1.selectbox("시/도", list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") if "서울특별시" in KOREA_REGION_DATA else 0)
             n_gu = c_reg2.selectbox("시/군/구", list(KOREA_REGION_DATA[n_city].keys()))
-            
             dong_opts = KOREA_REGION_DATA[n_city][n_gu] + ["➕직접 입력"]
             n_dong_sel = c_reg3.selectbox("법정동", dong_opts)
             if n_dong_sel == "➕직접 입력": n_dong = st.text_input("법정동 직접 입력 (예: 방이동)")
@@ -210,10 +236,12 @@ if selected_tab == "🔥 실시간 매물방":
             
             c_n1, c_n2, c_n3 = st.columns(3)
             n_bon, n_bu, n_room = c_n1.text_input("본번", placeholder="28"), c_n2.text_input("부번", placeholder="2"), c_n3.text_input("호실", placeholder="101")
-            n_bldg = st.text_input("🏢 건물명 (선택사항, 입력 시 가시성 극대화)", placeholder="예: 니도, 엘루이시티")
+            n_bldg = st.text_input("🏢 건물명 (선택사항, 입력 시 가시성 극대화)", placeholder="예: 엘루이시티")
             
             c_t1, c_t2, c_t3 = st.columns(3)
-            n_btype = c_t1.selectbox("용도", ["아파트", "오피스텔", "다세대", "다가구", "빌라", "상가"])
+            if "일반" in reg_type: yongdo_opts = ["오피스텔", "아파트"]
+            else: yongdo_opts = ["빌라", "상가", "다세대", "다가구", "기타"]
+            n_btype = c_t1.selectbox("용도", yongdo_opts)
             n_tr_type = c_t2.selectbox("거래 종류", ["전세", "월세", "단기임대", "매매"])
             n_biz_type = c_t3.selectbox("사업자 유형", ["무사업자", "주임사", "일임사", "확인불가"])
             
@@ -231,7 +259,7 @@ if selected_tab == "🔥 실시간 매물방":
                     if str(lr[2]).strip() == str(n_dong).strip() and str(lr[3]).strip() == str(n_bon).strip() and str(lr[4]).strip() == str(n_bu).strip() and re.sub(r'[^0-9]', '', str(lr[8])) == re.sub(r'[^0-9]', '', str(n_room)):
                         is_duplicate = True; dup_manager = lr[24]; break
                         
-                if is_duplicate: st.error(f"🚨 이미 매물방에 등록되어 살아있는 매물입니다! (현재 담당자: {dup_manager})")
+                if is_duplicate: st.error(f"🚨 이미 매물방에 등록되어 살아있는 매물입니다! (담당자: {dup_manager})")
                 elif not n_dong or not n_bon or not n_room: st.error("필수 항목(동, 번지, 호수)을 입력하세요.")
                 else:
                     in_dong, in_bon, in_bu, in_room = str(n_dong).strip(), str(n_bon).strip(), str(n_bu).strip() if str(n_bu).strip() else "0", re.sub(r'[^0-9]', '', str(n_room))
@@ -241,7 +269,6 @@ if selected_tab == "🔥 실시간 매물방":
                         if idx_db == 0: continue
                         r_dong, r_bon, r_bu = str(r_row[2]).strip(), str(r_row[3]).strip(), str(r_row[4]).strip()
                         r_room = re.sub(r'[^0-9]', '', str(r_row[8])) if len(r_row)>8 else ""
-                        
                         if r_dong == in_dong and r_bon == in_bon and r_bu == in_bu and r_room == in_room:
                             curr_hist = str(r_row[22]).strip() if len(r_row)>22 else ""
                             if len(curr_hist) > len(old_history): old_history = curr_hist
@@ -260,207 +287,136 @@ if selected_tab == "🔥 실시간 매물방":
                     ws_data.append_row(new_row, value_input_option='USER_ENTERED')
                     
                     price_s = f"{n_dep}/{n_rent}" if n_rent and n_rent != "0" else f"{n_dep}"
-                    
                     n_bu_str = f"-{n_bu}" if n_bu and n_bu != "0" else ""
                     b_s = f"[{n_dong} {n_bon}{n_bu_str}] {n_bldg}".strip() if n_bldg else f"[{n_dong} {n_bon}{n_bu_str}]"
                     
                     temp_live_row = new_row.copy(); temp_live_row.append(0); temp_live_row.append(7) 
-                    live_records.append(temp_live_row)
+                    
+                    if n_btype == "오피스텔": op_live.append(temp_live_row)
+                    elif n_btype == "아파트": apt_live.append(temp_live_row)
+                    else: etc_live.append(temp_live_row)
                     
                     send_kakao_live_room(f"{b_s}/{n_room}/{n_tr_type} {price_s}/{n_memo[:15]}/{n_biz_type}/{user_name}")
-                    st.cache_data.clear(); st.success("🎉 실시간 매물방 등록 완료! (기존 DB는 정리되었습니다)"); st.rerun()
+                    st.cache_data.clear(); st.success("🎉 매물방 등록 완료!"); st.rerun()
 
     if user_email in ADMIN_EMAILS:
-        if st.button("🚀 단톡방에 현재 매물 리스트 전체 쏘기 (관리자 전용)"):
-            send_kakao_live_room("수동으로 브리핑을 발송했습니다.")
-            st.success("카카오워크 단톡방에 발송 완료!")
+        if st.button("🚀 단톡방에 현재 3단 매물 리스트 쏘기 (관리자)"):
+            send_kakao_live_room("수동 브리핑 발송 완료")
+            st.success("카카오워크 발송 완료!")
         
     st.write("---")
     
-    if not live_records:
-        st.info("현재 확인된 살아있는 매물이 없습니다. 위에서 신규 등록을 해주세요!")
-    else:
-        for r in live_records:
+    def render_live_group(group_list, title, icon):
+        if not group_list: return
+        st.markdown(f"### {icon} {title} 핫매물")
+        for r in group_list:
             city, gu, dong, bon, bu, road, bldg, d_dong, room, name, birth, phone, b_type, appr_date, viol, land_area, room_area, curr_biz, deposit, rent, fee, end_date, memo, reg_date, registrar, status, tr_type, biz_type, row_idx, d_day = r
-            
             addr_key = f"[{dong} {bon}" + (f"-{bu}" if bu and bu != "0" else "") + "]"
             b_name = f"{addr_key} {bldg}".strip() if bldg else addr_key
-            
             ho_str = f"{d_dong} {room}".strip().replace("동없음 ", "")
             price_str = f"{deposit} / {rent}" if rent and rent != "0" else f"{deposit}"
             
             full_addr_check = f"{dong} {bon}-{bu} {bldg}"
-            is_managed = is_managed_building(full_addr_check)
-            badge = " 👑[전속관리]" if is_managed else ""
+            badge = " 👑[전속]" if is_managed_building(full_addr_check) else ""
             
-            if d_day >= 0:
-                d_color = "🟢" if d_day >= 4 else "🔴"
-                d_str = f"D-{d_day}"
-            else:
-                d_color = "🚨"
-                d_str = f"D+{-d_day} (업데이트 요망!)"
+            d_color = "🟢" if d_day >= 4 else "🔴"
+            d_str = f"D-{d_day}" if d_day >= 0 else f"D+{-d_day}🚨"
             
-            st.markdown(f"### {badge} {b_name} {ho_str} ({tr_type} {price_str}) {d_color} {d_str}")
-            st.write(f"**입주:** {end_date} | **유형:** {biz_type} | **담당:** {registrar}")
+            st.markdown(f"**{badge} {b_name} {ho_str}** ({tr_type} {price_str}) {d_color} {d_str}")
+            st.write(f"입주: {end_date} | 유형: {biz_type} | 담당: {registrar}")
             st.caption(f"📝 {memo}")
             
             if registrar == user_name or has_vip:
                 c_exp1, c_exp2 = st.columns(2)
                 with c_exp1:
-                    with st.expander("🔄 소유권 연장 및 최신화"):
-                        with st.form(f"extend_{row_idx}"):
-                            new_memo = st.text_input("새로운 특이사항 (기존 메모에 추가됩니다)", placeholder="통화 완료, 조건 동일함")
-                            if st.form_submit_button("최신화 하기 (+1 토큰)"):
+                    with st.expander("🔄 최신화(연장)"):
+                        with st.form(f"ex_{row_idx}"):
+                            new_memo = st.text_input("추가 피드", placeholder="통화 완료")
+                            if st.form_submit_button("최신화(+1)"):
                                 now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
-                                updated_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
-                                
-                                ws_data.update_cell(row_idx, 23, updated_memo)
-                                ws_data.update_cell(row_idx, 24, now_str) 
+                                up_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
+                                ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 24, now_str) 
                                 update_token(user_name, 1, f"매물 최신화 ({b_name} {ho_str})")
-                                send_kakao_live_room(f"{b_name}/{ho_str}/{tr_type} {price_str}/[갱신] {new_memo}/{biz_type}/{user_name}")
+                                send_kakao_live_room(f"{b_name}/{ho_str}/[갱신] {new_memo}/{user_name}")
                                 st.cache_data.clear(); st.rerun()
-                                
                 with c_exp2:
-                    with st.expander("❌ 매물 내리기 (계약/보류)"):
-                        with st.form(f"drop_{row_idx}"):
-                            drop_reason = st.selectbox("내리는 사유", ["타부동산 계약완료", "임대 보류/취소", "당사 계약 (계약보고탭 이용 요망)", "기타"])
-                            if st.form_submit_button("매물 방에서 내리기"):
+                    with st.expander("❌ 내리기(계약/보류)"):
+                        with st.form(f"dr_{row_idx}"):
+                            drop_reason = st.selectbox("사유", ["타부동산 계약", "보류", "당사계약", "기타"])
+                            if st.form_submit_button("내리기"):
                                 now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
-                                updated_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] 매물내림: {drop_reason}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] 매물내림: {drop_reason}"
-
-                                ws_data.update_cell(row_idx, 23, updated_memo)
-                                ws_data.update_cell(row_idx, 26, "비공개") 
-
-                                live_records[:] = [x for x in live_records if x[28] != row_idx]
-                                send_kakao_live_room(f"{b_name}/{ho_str} ❌ 매물내림 ({drop_reason})/{user_name}")
+                                up_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] 내림: {drop_reason}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] 내림: {drop_reason}"
+                                ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 26, "비공개") 
+                                send_kakao_live_room(f"{b_name}/{ho_str} ❌ 내림({drop_reason})/{user_name}")
                                 st.cache_data.clear(); st.rerun()
             st.write("---")
 
+    render_live_group(op_live, "오피스텔", "🏢")
+    render_live_group(apt_live, "아파트", "🏘️")
+    render_live_group(etc_live, "빌라/상가/전속건물", "🏡")
+    if not (op_live or apt_live or etc_live): st.info("현재 확인된 살아있는 매물이 없습니다.")
+
 # ==========================================
-# 탭 4: 📞 오늘의 오피콜
+# 탭 2: 🔍 전체검색 (디테일 필터 장착!)
 # ==========================================
-elif selected_tab == "📞 오늘의 오피콜":
-    if user_email in ADMIN_EMAILS:
-        st.success("👑 대표님 계정입니다! 대표님께 타겟이 배정되면 직원들 몫이 줄어들므로, 대표님 화면에서는 오피콜 리스트가 노출되지 않도록 배정을 차단(블라인드)했습니다.")
-    else:
-        if has_vip: 
-            st.success("🎉 VIP 계정은 오피콜 의무 할당량이 면제됩니다!")
-            quota_done = 5 
-        else: st.subheader(f"📞 오늘의 오피콜 (진행도: {quota_done}/5)")
-
-        if quota_done >= 5 and not has_vip: st.success("🎉 오늘의 오피콜을 모두 완료했습니다!")
-        
-        op_candidates, apt_candidates = [], []
-        
-        for r in expired_records + all_records:
-            if today_shift in str(r[23]): continue 
-            if "연락처 없음" in str(r[11]) or not str(r[11]).strip(): continue
-            
-            dong_bon_bu = (f"{r[2]}{r[3]}" + (f"-{r[4]}" if r[4] and r[4] != "0" else "")).replace(" ", "")
-            bldg = str(r[6]).replace(" ", "")
-            yongdo = str(r[12]).strip()
-            
-            # 💡 [핵심] 주소에 타겟 이름이 포함되어 있는지 훨씬 유연하게 검사!
-            is_apt = any(ta in dong_bon_bu or ta in bldg for ta in target_apt_list)
-            is_op = any(ta in dong_bon_bu or ta in bldg for ta in target_op_list)
-            
-            if yongdo == "아파트" and is_apt: apt_candidates.append(r)
-            elif yongdo != "아파트" and is_op: op_candidates.append(r)
-                
-        def deduplicate_pool(pool):
-            seen = set(); res = []
-            for x in pool:
-                if x[28] not in seen: seen.add(x[28]); res.append(x)
-            return res
-            
-        unique_op = deduplicate_pool(op_candidates)
-        unique_apt = deduplicate_pool(apt_candidates)
-                
-        eligible_staff = sorted([r['이름'] for r in staff_records if r['이름'] not in ["이응찬 대표", "곽태근 대표"]])
-        my_idx = eligible_staff.index(user_name) if user_name in eligible_staff else 0
-        
-        items_to_show = 5 if has_vip else (5 - quota_done)
-        
-        # 💡 오피스텔 4개, 아파트 1개 정확히 뽑아오기
-        my_op = unique_op[my_idx * 4 : (my_idx * 4) + 4]
-        my_apt = unique_apt[my_idx * 1 : (my_idx * 1) + 1]
-        
-        my_assigned_pool = my_op + my_apt
-        
-        # 💡 [핵심 땜빵 로직] 아파트 타겟이 다 떨어졌으면 직원이 할당량을 채울 수 있게 오피스텔로 5개를 꽉 채워줍니다!
-        if len(my_assigned_pool) < items_to_show:
-            shortage = items_to_show - len(my_assigned_pool)
-            extra_op = unique_op[(my_idx * 4) + 4 : (my_idx * 4) + 4 + shortage]
-            my_assigned_pool += extra_op
-            
-        my_assigned_pool = my_assigned_pool[:items_to_show]
-        
-        if not my_assigned_pool: st.success("🎉 배정된 타겟 명단이 모두 소진되었습니다!")
-        else:
-            for idx, row in enumerate(my_assigned_pool):
-                addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "")
-                room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
-                is_expired_target = row in expired_records
-                yongdo_badge = f"🏢[{row[12]}]" if str(row[12]) else "🏢[미상]"
-                
-                tag = "🔥 [폭파 매물 줍기!]" if is_expired_target else "🎯 타겟"
-                st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
-                st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **종료일:** {row[21]}\n\n**히스토리:**\n{row[22]}")
-                
-                # 💡 [입력 폼 개선] 삐뚤어짐 없이 일자로 쫙 맞춘 폼!
-                with st.form(f"call_update_{row[28]}"):
-                    st.markdown("**📝 통화 결과 입력** (종료일과 피드는 필수입니다!)")
-                    c_in1, c_in2, c_in3, c_in4, c_in5 = st.columns([1.5, 1, 1, 2.5, 1.3])
-                    new_mangi = c_in1.text_input("계약종료일", key=f"m_{row[28]}", placeholder="종료일*(0000.00.00)", label_visibility="collapsed")
-                    new_dep = c_in2.text_input("보증금", key=f"d_{row[28]}", placeholder="보증금", label_visibility="collapsed")
-                    new_rent = c_in3.text_input("월세", key=f"r_{row[28]}", placeholder="월세", label_visibility="collapsed")
-                    new_memo = c_in4.text_input("피드", key=f"f_{row[28]}", placeholder="피드*(통화결과)", label_visibility="collapsed")
-                    
-                    if c_in5.form_submit_button("✅ 내용저장(+1)", use_container_width=True):
-                        if not new_mangi or not new_memo:
-                            st.error("🚨 계약 종료일과 피드는 필수 입력입니다!")
-                        elif not is_valid_date(new_mangi):
-                            st.error("🚨 계약 종료일은 'YYYY.MM.DD' 또는 '0000.00.00' 양식으로 정확히 적어주세요!")
-                        else:
-                            now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
-                            old_memo = str(row[22]).strip()
-                            updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
-                            
-                            ws_data.update_cell(row[28], 22, new_mangi)
-                            ws_data.update_cell(row[28], 23, updated_memo) 
-                            ws_data.update_cell(row[28], 24, now_str) 
-                            ws_data.update_cell(row[28], 25, user_name) 
-                            
-                            if new_dep: ws_data.update_cell(row[28], 18, new_dep)
-                            if new_rent: ws_data.update_cell(row[28], 19, new_rent)
-                            
-                            if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
-                            update_token(user_name, 1, f"오피콜 완료 ({addr_str})")
-                            st.cache_data.clear(); st.rerun()
-
-                # 💡 센스 있는 문구 변경!
-                if st.button("⏭️ 부재중/다음기회에", key=f"pass_{row[28]}"):
-                    ws_data.update_cell(row[28], 24, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'))
-                    ws_data.update_cell(row[28], 25, user_name) 
-                    if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
-                    st.cache_data.clear(); st.rerun()
-                st.write("---")
-
 elif selected_tab == "🔍 전체검색":
     if is_locked: st.markdown(f"<div class='locked-tab'><h2>🔒 오늘 할당량을 먼저 완수해주세요!</h2><p>할당량({quota_done}/5건) 완료 시 해제</p></div>", unsafe_allow_html=True)
     else:
-        c_s1, c_s2, c_s3 = st.columns(3)
-        sel_sido = c_s1.selectbox("시/도", ["전체"] + list(KOREA_REGION_DATA.keys()), index=1)
-        gu_opts = ["전체"] + list(KOREA_REGION_DATA[sel_sido].keys()) if sel_sido != "전체" else ["전체"]
-        sel_sigungu = c_s2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
-        sel_dong = c_s3.selectbox("법정동", ["전체"] + (KOREA_REGION_DATA[sel_sido][sel_sigungu] if sel_sigungu != "전체" and sel_sido != "전체" else []), index=0)
+        st.subheader("🔍 엘루이 통합 디테일 검색")
         
         with st.form("search_addr_form"):
+            c_s1, c_s2, c_s3 = st.columns(3)
+            sel_sido = c_s1.selectbox("시/도", ["전체"] + list(KOREA_REGION_DATA.keys()), index=1)
+            gu_opts = ["전체"] + list(KOREA_REGION_DATA[sel_sido].keys()) if sel_sido != "전체" else ["전체"]
+            sel_sigungu = c_s2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
+            sel_dong = c_s3.selectbox("법정동", ["전체"] + (KOREA_REGION_DATA[sel_sido][sel_sigungu] if sel_sigungu != "전체" and sel_sido != "전체" else []), index=0)
+            
             c_f1, c_f2 = st.columns([2, 1])
-            b_search = c_f1.text_input("번지/건물명", placeholder="28-2")
+            b_search = c_f1.text_input("번지/건물명", placeholder="28-2 또는 엘루이")
             r_search = c_f2.text_input("호실", placeholder="101")
-            if st.form_submit_button("🔍 검색", type="primary", use_container_width=True):
-                st.session_state.addr_search_res = sorted([r for r in all_records if (sel_sido=="전체" or sel_sido==str(r[0]).strip()) and (sel_sigungu=="전체" or sel_sigungu==str(r[1]).strip()) and (sel_dong=="전체" or sel_dong==str(r[2]).strip()) and (not b_search or b_search.replace(" ","") in ((f"{r[3]}-{r[4]}" if str(r[4])!="0" else str(r[3]))+str(r[6])).replace(" ","")) and (not r_search or r_search.replace(" ","") in (str(r[7])+str(r[8])).replace(" ",""))], key=lambda x: int(clean_numeric(x[8])) if clean_numeric(x[8]) else 9999)
+            
+            st.write("**💰 금액 필터 (단위: 만원)**")
+            c_p1, c_p2, c_p3, c_p4 = st.columns(4)
+            min_dep = c_p1.number_input("최소 보증금", value=0, step=1000)
+            max_dep = c_p2.number_input("최대 보증금", value=999999, step=1000)
+            min_rent = c_p3.number_input("최소 월세", value=0, step=10)
+            max_rent = c_p4.number_input("최대 월세", value=9999, step=10)
+            
+            st.write("**✨ 특수 조건**")
+            c_k1, c_k2 = st.columns([1, 2])
+            pet_ok = c_k1.checkbox("🐶 애완(반려동물) 가능만 보기")
+            kw_search = c_k2.text_input("특이사항 포함 키워드", placeholder="예: 전입, 풀옵션, 주차")
+            
+            if st.form_submit_button("🔍 검색하기", type="primary", use_container_width=True):
+                res = []
+                for r in all_records:
+                    if sel_sido != "전체" and sel_sido != str(r[0]).strip(): continue
+                    if sel_sigungu != "전체" and sel_sigungu != str(r[1]).strip(): continue
+                    if sel_dong != "전체" and sel_dong != str(r[2]).strip(): continue
+                    
+                    addr_combined = ((f"{r[3]}-{r[4]}" if str(r[4])!="0" else str(r[3]))+str(r[6])).replace(" ","")
+                    if b_search and b_search.replace(" ","") not in addr_combined: continue
+                    if r_search and r_search.replace(" ","") not in (str(r[7])+str(r[8])).replace(" ",""): continue
+                    
+                    # 💡 금액 필터링 로직
+                    dep_val = int(clean_numeric(r[18])) // 10000 if clean_numeric(r[18]) else 0
+                    rent_val = int(clean_numeric(r[19])) // 10000 if clean_numeric(r[19]) else 0
+                    if not (min_dep <= dep_val <= max_dep): continue
+                    if not (min_rent <= rent_val <= max_rent): continue
+                    
+                    memo_text = str(r[22]).replace(" ", "")
+                    # 💡 애완가능 필터 (메모에 애완/반려/강아지/고양이가 있고 '불가/안됨'이 없거나 명시적으로 '가능/O' 인 경우)
+                    if pet_ok:
+                        has_pet_kw = any(k in memo_text for k in ["애완", "반려", "동물", "강아지", "고양이", "펫"])
+                        has_no_kw = any(k in memo_text for k in ["불가", "안됨", "x", "금지"])
+                        if not (has_pet_kw and not has_no_kw) and "애완가능" not in memo_text and "반려동물가능" not in memo_text:
+                            continue
+                            
+                    if kw_search and kw_search.replace(" ", "") not in memo_text: continue
+                    
+                    res.append(r)
+                    
+                st.session_state.addr_search_res = sorted(res, key=lambda x: int(clean_numeric(x[8])) if clean_numeric(x[8]) else 9999)
         
         if st.session_state.get("addr_search_res"):
             st.caption(f"검색 결과: {len(st.session_state.addr_search_res)}건")
@@ -481,6 +437,201 @@ elif selected_tab == "🔍 전체검색":
                     if st.button("🔓 열람 (-1토큰)", key=f"btn_addr_{idx}"):
                         if user_tokens >= 1: update_token(user_name, -1, f"매물 열람 ({addr_str})"); st.session_state[uk] = True; st.session_state[tk] = True; st.cache_data.clear(); st.rerun()
                         else: st.error("토큰 부족")
+                st.write("---")
+
+# ==========================================
+# 탭 3: 🏢 건물 정보 (비밀수첩)
+# ==========================================
+elif selected_tab == "🏢 오피스텔 정보":
+    st.title("🏢 건물 비밀수첩")
+    st.write("각 건물의 관리실 번호, 공동현관 및 화장실 비밀번호를 모아두는 곳입니다.")
+    
+    if ws_building is None:
+        st.error("🚨 구글 마스터 시트에 **'건물정보'** 탭이 없습니다! 시트 하단에서 [+] 버튼을 눌러 탭을 생성해주세요.")
+    else:
+        with st.expander("➕ 새로운 건물 정보 등록"):
+            with st.form("add_bldg"):
+                b_name = st.text_input("건물명 (예: 엘루이시티)")
+                b_mgmt = st.text_input("관리실 번호")
+                b_pw1 = st.text_input("1층 현관 비밀번호")
+                b_pw2 = st.text_input("화장실 비밀번호")
+                b_note = st.text_area("기타 참고사항")
+                if st.form_submit_button("등록"):
+                    if not b_name: st.error("건물명은 필수입니다.")
+                    else:
+                        ws_building.append_row([b_name, b_mgmt, b_pw1, b_pw2, user_name, today_shift, b_note], value_input_option='USER_ENTERED')
+                        st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
+                        
+        st.write("---")
+        search_bldg = st.text_input("🔍 건물명 검색")
+        
+        for r in bldg_all_values[1:]: # 첫 줄은 헤더 가정
+            if len(r) < 4: continue
+            if search_bldg and search_bldg not in r[0]: continue
+            st.markdown(f"### 📍 {r[0]}")
+            st.info(f"**📞 관리실:** {r[1]} | **🔑 1층 비번:** {r[2]} | **🚽 화장실:** {r[3]}\n\n**📝 비고:** {r[6] if len(r)>6 else ''} \n\n*(작성: {r[4] if len(r)>4 else ''})*")
+            st.write("---")
+
+# ==========================================
+# 탭 4: 📖 경험치북 (사내 지식인)
+# ==========================================
+elif selected_tab == "📖 경험치북":
+    st.title("📖 엘루이 경험치북")
+    st.write("중개 사고 예방 및 꿀팁! 선배들의 노하우를 검색하고 댓글(피드)로 이력을 남기세요.")
+    
+    if ws_exp is None:
+        st.error("🚨 구글 마스터 시트에 **'경험치북'** 탭이 없습니다! 시트 하단에서 [+] 버튼을 눌러 탭을 생성해주세요.")
+    else:
+        with st.expander("✍️ 새로운 지식/판례 등록하기"):
+            with st.form("add_exp"):
+                e_title = st.text_input("제목 (어떤 상황이었나요?)")
+                e_body = st.text_area("상세 내용 및 해결 방법")
+                if st.form_submit_button("등록하기"):
+                    if not e_title: st.error("제목을 입력하세요.")
+                    else:
+                        new_id = len(exp_all_values) + 1
+                        ws_exp.append_row([new_id, e_title, e_body, user_name, today_shift, "[]"], value_input_option='USER_ENTERED')
+                        st.cache_data.clear(); st.success("등록 완료!"); st.rerun()
+        
+        st.write("---")
+        search_exp = st.text_input("🔍 지식 검색 (키워드 입력)")
+        
+        for i, r in enumerate(reversed(exp_all_values[1:])):
+            if len(r) < 5: continue
+            idx = len(exp_all_values) - 1 - i # 원래 행 번호
+            title, body, author, date = r[1], r[2], r[3], r[4]
+            comments_str = r[5] if len(r)>5 else "[]"
+            
+            if search_exp and search_exp not in title and search_exp not in body and search_exp not in comments_str: continue
+            
+            try: comments = json.loads(comments_str)
+            except: comments = []
+            
+            with st.expander(f"📌 {title} (댓글: {len(comments)}개) - {author}"):
+                st.write(body)
+                st.caption(f"작성일: {date}")
+                st.write("---")
+                st.markdown("**💬 해결 과정 및 피드백**")
+                for c in comments:
+                    st.info(f"**{c.get('author','')}** ({c.get('date','')}): {c.get('text','')}")
+                    
+                with st.form(f"comment_form_{idx}"):
+                    c_text = st.text_input("댓글(피드) 달기")
+                    if st.form_submit_button("등록"):
+                        if c_text:
+                            comments.append({"author": user_name, "date": today_shift, "text": c_text})
+                            ws_exp.update_cell(idx + 1, 6, json.dumps(comments))
+                            st.cache_data.clear(); st.rerun()
+
+# ==========================================
+# 탭 6: 📞 오늘의 오피콜
+# ==========================================
+elif selected_tab == "📞 오늘의 오피콜":
+    if user_email in ADMIN_EMAILS:
+        st.success("👑 대표님 계정입니다! 타겟을 점유하지 않도록 블라인드 처리되었습니다.")
+    else:
+        if has_vip: 
+            st.success("🎉 VIP 계정은 오피콜 의무 할당량이 면제됩니다!")
+            quota_done = 5 
+        else: st.subheader(f"📞 오늘의 오피콜 (진행도: {quota_done}/5)")
+
+        if quota_done >= 5 and not has_vip: st.success("🎉 오늘의 오피콜을 모두 완료했습니다!")
+        
+        op_candidates, apt_candidates = [], []
+        
+        for r in expired_records + all_records:
+            if today_shift in str(r[23]): continue 
+            if "연락처 없음" in str(r[11]) or not str(r[11]).strip(): continue
+            
+            # 💡 [버그 픽스] 아파트 주소 매칭 로직을 훨씬 유연하게 강화!
+            dong = str(r[2]).strip()
+            bon = str(r[3]).strip()
+            bu = str(r[4]).strip()
+            addr_no_space = f"{dong}{bon}-{bu}" if bu and bu != "0" else f"{dong}{bon}"
+            bldg = str(r[6]).replace(" ", "")
+            yongdo = str(r[12]).strip()
+            
+            is_apt = any((ta in addr_no_space or ta in bldg or addr_no_space in ta) for ta in target_apt_list if ta)
+            is_op = any((ta in addr_no_space or ta in bldg or addr_no_space in ta) for ta in target_op_list if ta)
+            
+            if yongdo == "아파트" and is_apt: apt_candidates.append(r)
+            elif yongdo != "아파트" and is_op: op_candidates.append(r)
+                
+        def deduplicate_pool(pool):
+            seen = set(); res = []
+            for x in pool:
+                if x[28] not in seen: seen.add(x[28]); res.append(x)
+            return res
+            
+        unique_op = deduplicate_pool(op_candidates)
+        unique_apt = deduplicate_pool(apt_candidates)
+                
+        eligible_staff = sorted([r['이름'] for r in staff_records if r['이름'] not in ["이응찬 대표", "곽태근 대표"]])
+        my_idx = eligible_staff.index(user_name) if user_name in eligible_staff else 0
+        
+        items_to_show = 5 if has_vip else (5 - quota_done)
+        
+        my_op = unique_op[my_idx * 4 : (my_idx * 4) + 4]
+        my_apt = unique_apt[my_idx * 1 : (my_idx * 1) + 1]
+        
+        my_assigned_pool = my_op + my_apt
+        
+        # 💡 [땜빵 로직] 아파트가 없으면 오피스텔로 할당량 5개 강제 채우기
+        if len(my_assigned_pool) < items_to_show:
+            shortage = items_to_show - len(my_assigned_pool)
+            extra_op = unique_op[(my_idx * 4) + 4 : (my_idx * 4) + 4 + shortage]
+            my_assigned_pool += extra_op
+            
+        my_assigned_pool = my_assigned_pool[:items_to_show]
+        
+        if not my_assigned_pool: st.success("🎉 배정된 타겟 명단이 모두 소진되었습니다!")
+        else:
+            for idx, row in enumerate(my_assigned_pool):
+                addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "")
+                room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
+                is_expired_target = row in expired_records
+                yongdo_badge = f"🏢[{row[12]}]" if str(row[12]) else "🏢[미상]"
+                
+                tag = "🔥 [폭파 매물 줍기!]" if is_expired_target else "🎯 타겟"
+                st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
+                st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **종료일:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+                
+                # 💡 [완벽 폼] 일자 가로 정렬, 필수값 체크, 버튼 이름 변경!
+                with st.form(f"call_update_{row[28]}"):
+                    st.markdown("**📝 통화 결과 입력** (* 표시 항목은 필수입니다)")
+                    c_in1, c_in2, c_in3, c_in4, c_in5 = st.columns([1.5, 1, 1, 2.5, 1.3])
+                    new_mangi = c_in1.text_input("계약종료일*", key=f"m_{row[28]}", placeholder="0000.00.00", label_visibility="collapsed")
+                    new_dep = c_in2.text_input("보증금", key=f"d_{row[28]}", placeholder="보증금", label_visibility="collapsed")
+                    new_rent = c_in3.text_input("월세", key=f"r_{row[28]}", placeholder="월세", label_visibility="collapsed")
+                    new_memo = c_in4.text_input("피드*", key=f"f_{row[28]}", placeholder="피드(통화결과) 입력", label_visibility="collapsed")
+                    
+                    if c_in5.form_submit_button("✅ 내용저장(+1)", use_container_width=True):
+                        if not new_mangi or not new_memo:
+                            st.error("🚨 계약종료일과 피드는 필수 입력입니다!")
+                        elif not is_valid_date(new_mangi):
+                            st.error("🚨 계약종료일은 'YYYY.MM.DD' 또는 '0000.00.00' 양식으로 정확히 적어주세요!")
+                        else:
+                            now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                            old_memo = str(row[22]).strip()
+                            updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
+                            
+                            ws_data.update_cell(row[28], 22, new_mangi)
+                            ws_data.update_cell(row[28], 23, updated_memo) 
+                            ws_data.update_cell(row[28], 24, now_str) 
+                            ws_data.update_cell(row[28], 25, user_name) 
+                            
+                            if new_dep: ws_data.update_cell(row[28], 18, new_dep)
+                            if new_rent: ws_data.update_cell(row[28], 19, new_rent)
+                            
+                            if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
+                            update_token(user_name, 1, f"오피콜 완료 ({addr_str})")
+                            st.cache_data.clear(); st.rerun()
+
+                if st.button("⏭️ 부재중 / 다음기회에", key=f"pass_{row[28]}"):
+                    ws_data.update_cell(row[28], 24, (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'))
+                    ws_data.update_cell(row[28], 25, user_name) 
+                    if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
+                    st.cache_data.clear(); st.rerun()
                 st.write("---")
 
 elif selected_tab == "👤 소유주검색":
