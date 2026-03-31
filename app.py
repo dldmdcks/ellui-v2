@@ -4,9 +4,9 @@ from google.oauth2.credentials import Credentials
 import json
 import requests
 from datetime import datetime, timedelta
-import extra_streamlit_components as stx  # 💡 쿠키 도구 추가!
+import extra_streamlit_components as stx
 
-# 1. 페이지 설정 및 디자인 (💡 사이드바 강제 고정 세팅!)
+# 1. 페이지 설정 및 디자인 (사이드바 고정)
 st.set_page_config(page_title="엘루이 업무포털", page_icon="🏢", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
     <style>
@@ -20,7 +20,7 @@ st.markdown("""
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
-# 💡 [핵심] 쿠키 매니저 로딩 (브라우저에 도장 쾅!)
+# 쿠키 매니저 로딩
 @st.cache_resource
 def get_cookie_manager():
     return stx.CookieManager()
@@ -42,7 +42,7 @@ if 'connected' not in st.session_state:
 
 query_params = st.query_params
 
-# 💡 1순위: 쿠키 확인 (도장이 있으면 구글 로그인 건너뛰고 프리패스!)
+# 💡 쿠키 확인
 cached_email = cookie_manager.get(cookie="ellui_user_email")
 if cached_email and not st.session_state.connected:
     st.session_state.connected = True
@@ -63,7 +63,6 @@ if "code" in query_params and not st.session_state.connected:
         if "email" in user_info:
             st.session_state.connected = True
             st.session_state.user_info = user_info
-            # 💡 로그인 성공 시 30일짜리 쿠키 저장!
             cookie_manager.set("ellui_user_email", user_info["email"], expires_at=datetime.now() + timedelta(days=30))
             st.query_params.clear()
             st.rerun()
@@ -88,7 +87,9 @@ def fetch_basic_data(): return ws_staff.get_all_records(), ws_settings.get_all_v
 staff_records, settings_all_values = fetch_basic_data()
 
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
-user_email = st.session_state.user_info.get("email", "")
+
+# 💡 [안전망 패치] 이메일 정보가 없어도 에러 안 나게 방어!
+user_email = st.session_state.get("user_info", {}).get("email", "")
 
 if user_email in staff_dict:
     user_name = staff_dict[user_email]['이름'] 
@@ -97,13 +98,14 @@ elif user_email in ADMIN_EMAILS:
     user_name = "이응찬 대표" if user_email == "dldmdcks94@gmail.com" else "곽태근 대표"
     user_tokens = 9999
 else:
-    st.error("⚠️ 승인되지 않은 계정입니다."); st.stop()
+    st.error("⚠️ 승인되지 않은 계정입니다. 로그인 상태를 다시 확인해주세요.")
+    st.stop()
 
 # --- 사이드바 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 if st.sidebar.button("로그아웃"): 
-    cookie_manager.delete("ellui_user_email") # 💡 로그아웃 시 쿠키 완벽 파기
+    cookie_manager.delete("ellui_user_email")
     st.query_params.clear()
     st.session_state.clear()
     st.rerun()
