@@ -3,3 +3,4 @@ gspread
 streamlit-google-auth
 pandas
 requests
+extra-streamlit-components
