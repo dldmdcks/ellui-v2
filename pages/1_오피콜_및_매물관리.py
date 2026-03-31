@@ -6,11 +6,11 @@ import re
 from datetime import datetime, timedelta
 import requests
 
-# 🚨 [보안] 로그인 확인
-if "connected" not in st.session_state or not st.session_state.connected:
+# 🚨 [보안 및 안전망] 정보가 하나라도 비면 뻗지 말고 즉시 메인으로 돌려보냄!
+if "connected" not in st.session_state or not st.session_state.connected or "user_info" not in st.session_state:
     st.switch_page("app.py")
+    st.stop()
 
-# 💡 [핵심] 사이드바 무조건 열려있도록 강제 고정!
 st.set_page_config(page_title="오피콜 및 매물관리", page_icon="🔍", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -19,6 +19,7 @@ st.markdown("""
         .stButton>button { padding: 0.2rem 0.5rem; min-height: 2rem; }
         .block-container { padding-top: 3.5rem; padding-bottom: 2rem; }
         [data-testid="stSidebarNav"] { display: none !important; }
+        [data-testid="stSidebar"] { width: 280px !important; display: block !important; }
         div[role="radiogroup"] { flex-direction: row; gap: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f2f6; margin-bottom: 20px; }
         .live-card { background-color: #f8f9fa; border-left: 4px solid #00c853; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
         .stNumberInput input { padding: 0.2rem 0.5rem; }
@@ -73,7 +74,9 @@ def fetch_all_data():
 all_data_raw, staff_records, history_all_values, settings_all_values, bldg_all_values = fetch_all_data()
 
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
-user_email = st.session_state.user_info.get("email", "")
+
+# 💡 [안전망 패치] 이메일 정보가 없어도 에러 안 나게 방어!
+user_email = st.session_state.get("user_info", {}).get("email", "")
 
 now_kst = datetime.utcnow() + timedelta(hours=9)
 today_shift = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= 8 else (now_kst - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -95,7 +98,9 @@ if user_email in staff_dict:
 elif user_email in ADMIN_EMAILS:
     user_name = "이응찬 대표" if user_email == "dldmdcks94@gmail.com" else "곽태근 대표"
     user_tokens, is_locked, has_vip, quota_done = 9999, False, True, 5
-else: st.error("승인되지 않은 계정입니다."); st.stop()
+else: 
+    st.error("승인되지 않은 계정입니다.")
+    st.stop()
 
 history_records = history_all_values[1:] if len(history_all_values) > 1 else []
 MANAGER_BUILDINGS = {b.strip(): r['이름'] for r in staff_records for b in str(r.get('관리건물', '')).split(',') if b.strip()}
@@ -117,6 +122,11 @@ def update_token(t_name, amt, reason):
             ws_s.update_cell(i + 2, 4, int(r.get('보유토큰', 0)) + amt)
             ws_h.append_row([(datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'), t_name, amt, int(r.get('보유토큰', 0)) + amt, reason], value_input_option='USER_ENTERED')
             break
+
+def is_managed_building(addr_str):
+    for b_name in MANAGER_BUILDINGS.keys():
+        if b_name.replace(" ","") in addr_str.replace(" ",""): return True
+    return False
 
 all_records = []
 live_records = [] 
@@ -167,7 +177,6 @@ for r in live_records:
 
 def build_kakao_msg_for_group(group_list, group_title):
     if not group_list: return ""
-    # 💡 핫매물 -> 매물 로 텍스트 변경 완료!
     msg = f"━━━━━━━━━━━━━━\n🌟 [{group_title} 매물]\n━━━━━━━━━━━━━━\n\n"
     grouped = {}
     for r in group_list:
@@ -179,7 +188,6 @@ def build_kakao_msg_for_group(group_list, group_title):
         grouped[display_group_name].append(r)
         
     for g_name in sorted(grouped.keys()):
-        # 💡 전속 단어 및 왕관 뱃지 제거 완료!
         msg += f"<{g_name}>\n"
         for r in grouped[g_name]:
             ho = f"{r[7]} {r[8]}".strip().replace("동없음 ", "")
@@ -208,7 +216,8 @@ def send_kakao_live_room(new_highlight_msg=""):
 
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
-if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.switch_page("app.py")
+if st.sidebar.button("로그아웃"): 
+    st.query_params.clear(); st.session_state.clear(); st.switch_page("app.py")
 st.sidebar.write("---")
 
 st.sidebar.markdown("### 🧭 메뉴 이동")
@@ -326,7 +335,6 @@ if selected_tab == "🔥 실시간 매물방":
     
     def render_live_group(group_list, title, icon):
         if not group_list: return
-        # 💡 핫매물 -> 매물 로 텍스트 변경
         st.markdown(f"### {icon} {title} 매물")
         for r in group_list:
             city, gu, dong, bon, bu, road, bldg, d_dong, room, name, birth, phone, b_type, appr_date, viol, land_area, room_area, curr_biz, deposit, rent, fee, end_date, memo, reg_date, registrar, status, tr_type, biz_type, row_idx, d_day = r
@@ -338,7 +346,6 @@ if selected_tab == "🔥 실시간 매물방":
             d_color = "🟢" if d_day >= 4 else "🔴"
             d_str = f"D-{d_day}" if d_day >= 0 else f"D+{-d_day}🚨"
             
-            # 💡 [전속] 텍스트 및 왕관 배지 삭제 완료
             st.markdown(f"**{b_name} {ho_str}** ({tr_type} {price_str}) {d_color} {d_str}")
             st.write(f"입주: {end_date} | 유형: {biz_type} | 담당: {registrar}")
             st.caption(f"📝 {memo}")
