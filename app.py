@@ -8,6 +8,8 @@ import extra_streamlit_components as stx
 
 # 1. 페이지 설정 및 디자인 (사이드바 고정)
 st.set_page_config(page_title="엘루이 업무포털", page_icon="🏢", layout="wide", initial_sidebar_state="expanded")
+
+# 💡 화면에 남는 '이상한 문구(찌꺼기)'를 완전히 투명화해서 지워버리는 코드
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
@@ -15,18 +17,17 @@ st.markdown("""
         .block-container { padding-top: 3.5rem; padding-bottom: 2rem; }
         [data-testid="stSidebarNav"] { display: none !important; }
         [data-testid="stSidebar"] { width: 280px !important; display: block !important; }
+        iframe[title*="CookieManager"] { display: none !important; height: 0px !important; }
+        iframe[src*="extra_streamlit_components"] { display: none !important; height: 0px !important; }
     </style>
 """, unsafe_allow_html=True)
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
-# 쿠키 매니저 로딩
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-cookie_manager = get_cookie_manager()
+# 💡 [치명적 버그 수정] 공용 메모리(@st.cache_resource) 완.전.삭.제! (개별 격리)
+cookie_manager = stx.CookieManager(key="auth_cookie_manager")
 
-# 2. 구글 로그인 및 보안
+# 2. 구글 API 금고 확인
 try:
     creds_dict = json.loads(st.secrets["credentials_json"])
     token_dict = json.loads(st.secrets["google_token_json"])
@@ -37,25 +38,21 @@ except:
     st.error("❌ 금고 설정(Secrets) 확인 요망!")
     st.stop()
 
+# 💡 빈 상자 미리 준비 (에러 방지)
 if 'connected' not in st.session_state: 
     st.session_state.connected = False
+if 'user_info' not in st.session_state:
+    st.session_state.user_info = {}
 
-query_params = st.query_params
-
-# 💡 쿠키 확인
+# 3. 로그인 유지(쿠키) 스캔
 cached_email = cookie_manager.get(cookie="ellui_user_email")
 if cached_email and not st.session_state.connected:
     st.session_state.connected = True
     st.session_state.user_info = {"email": cached_email}
 
-if "session_token" in query_params and not st.session_state.connected:
-    access_token = query_params["session_token"]
-    user_info = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {access_token}"}).json()
-    if "email" in user_info: 
-        st.session_state.connected = True
-        st.session_state.user_info = user_info
-        cookie_manager.set("ellui_user_email", user_info["email"], expires_at=datetime.now() + timedelta(days=30))
+query_params = st.query_params
 
+# 4. 구글 로그인 성공해서 돌아왔을 때의 처리 로직
 if "code" in query_params and not st.session_state.connected:
     res = requests.post("https://oauth2.googleapis.com/token", data={"code": query_params["code"], "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "redirect_uri": REDIRECT_URI, "grant_type": "authorization_code"}).json()
     if "access_token" in res:
@@ -63,16 +60,19 @@ if "code" in query_params and not st.session_state.connected:
         if "email" in user_info:
             st.session_state.connected = True
             st.session_state.user_info = user_info
+            
+            # 💡 [핵심] 브라우저에 30일짜리 쿠키를 굽고, 방해하지 않도록 놔둠 (st.rerun 삭제)
             cookie_manager.set("ellui_user_email", user_info["email"], expires_at=datetime.now() + timedelta(days=30))
             st.query_params.clear()
-            st.rerun()
 
 if not st.session_state.connected:
-    st.warning("🔒 엘루이 매물관리 시스템입니다. 구글 계정으로 본인인증 후 이용해주세요.")
+    st.warning("🔒 엘루이 업무 포털입니다. 구글 계정으로 본인인증 후 이용해주세요.")
     st.link_button("🔵 Google 계정으로 로그인", f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=select_account", type="primary", use_container_width=True)
     st.stop()
 
-# 3. 시트 데이터 연동
+# =================================---------
+# 5. 시트 데이터 연동 (이 아래는 대시보드 화면입니다)
+# =================================---------
 @st.cache_resource
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
 ss = get_ss()
@@ -88,8 +88,10 @@ staff_records, settings_all_values = fetch_basic_data()
 
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 
-# 💡 [안전망 패치] 이메일 정보가 없어도 에러 안 나게 방어!
-user_email = st.session_state.get("user_info", {}).get("email", "")
+# 💡 안전망: 이메일 변수 무조건 확보
+user_email = ""
+if "user_info" in st.session_state and isinstance(st.session_state["user_info"], dict):
+    user_email = st.session_state["user_info"].get("email", "")
 
 if user_email in staff_dict:
     user_name = staff_dict[user_email]['이름'] 
@@ -98,19 +100,22 @@ elif user_email in ADMIN_EMAILS:
     user_name = "이응찬 대표" if user_email == "dldmdcks94@gmail.com" else "곽태근 대표"
     user_tokens = 9999
 else:
-    st.error("⚠️ 승인되지 않은 계정입니다. 로그인 상태를 다시 확인해주세요.")
+    st.error(f"⚠️ 승인되지 않은 계정입니다. ({user_email}) 로그인 상태를 다시 확인해주세요.")
     st.stop()
 
-# --- 사이드바 ---
+# --- 🧭 사이드바 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
+
+# 💡 완벽한 로그아웃 로직
 if st.sidebar.button("로그아웃"): 
     cookie_manager.delete("ellui_user_email")
+    st.session_state.connected = False
+    st.session_state.user_info = {}
     st.query_params.clear()
-    st.session_state.clear()
-    st.rerun()
-st.sidebar.write("---")
+    # 버튼 클릭으로 자동 리렌더링되며, 최상단에서 로그인 창으로 차단됨!
 
+st.sidebar.write("---")
 st.sidebar.markdown("### 🧭 메뉴 이동")
 st.sidebar.page_link("app.py", label="홈", icon="🏠")
 st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물/DB", icon="🔍")
