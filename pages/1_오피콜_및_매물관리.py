@@ -196,15 +196,28 @@ def build_kakao_msg_for_group(group_list, group_title):
             ho = f"{r[7]} {r[8]}".strip().replace("동없음 ", "")
             tr_type = str(r[26]); biz_type = str(r[27])
             
-            # 💡 [핵심] 카톡 워크로 보낼 때 콤마(,) 예쁘게 찍어서 발송!
+            # 💡 [핵심] 카톡 워크로 보낼 때 콤마(,) 예쁘게 찍기
             dep = int(clean_numeric(r[18])) if clean_numeric(r[18]) else 0
             rent = int(clean_numeric(r[19])) if clean_numeric(r[19]) else 0
             price_str = f"{dep:,}/{rent:,}" if rent > 0 else f"{dep:,}"
             
-            memo_short = str(r[22]).split('\n')[0][:15] 
+            # 💡 [핵심] 만기일(입주일) 추출 및 '등록일' 찌꺼기 제거!
+            end_date = str(r[21]).strip()
+            if end_date == "0000.00.00" or not end_date:
+                end_date_short = "미정"
+            else:
+                end_date_short = end_date[2:] if end_date.startswith("20") else end_date
+                
+            raw_memo = str(r[22]).split('\n')[-1] if str(r[22]) else ""
+            clean_memo = re.sub(r'👉 \[\d{2}\.\d{2}\.\d{2}\]\s*(매물방\s*등록:\s*)?', '', raw_memo).strip()
+            memo_short = clean_memo[:15]
+            
             d_val = r[29]
             d_str = f"D-{d_val}" if d_val >= 0 else f"D+{-d_val} 🚨"
-            msg += f"{ho}/{tr_type} {price_str}/{memo_short}/{biz_type}/{r[24]}/{d_str}\n"
+            
+            # 💡 찌꺼기 날짜 대신 '만기 YY.MM.DD' 표출
+            memo_part = f"/{memo_short}" if memo_short else ""
+            msg += f"{ho}/{tr_type} {price_str}/만기 {end_date_short}{memo_part}/{biz_type}/{r[24]}/{d_str}\n"
         msg += "\n"
     return msg
 
@@ -352,7 +365,6 @@ if selected_tab == "🔥 실시간 매물방":
             b_name = f"{addr_key} {bldg}".strip() if bldg else addr_key
             ho_str = f"{d_dong} {room}".strip().replace("동없음 ", "")
             
-            # 💡 [화면 표시 콤마 처리]
             dep_val = int(clean_numeric(deposit)) if clean_numeric(deposit) else 0
             rent_val = int(clean_numeric(rent)) if clean_numeric(rent) else 0
             price_str = f"{dep_val:,} / {rent_val:,}" if rent_val > 0 else f"{dep_val:,}"
@@ -482,7 +494,6 @@ elif selected_tab == "🔍 전체검색":
                 if has_vip or user_email in ADMIN_EMAILS or st.session_state.get(uk, False):
                     if st.button("🔓 닫기/열기", key=f"btn_re_{idx}"): st.session_state[tk] = not st.session_state.get(tk, False)
                     if st.session_state.get(tk, False) or has_vip or user_email in ADMIN_EMAILS:
-                        # 💡 검색결과에도 콤마 적용
                         d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
                         r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
                         p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
@@ -625,7 +636,6 @@ elif selected_tab == "👤 소유주검색":
                 addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "") + (f" {row[6]}" if row[6] else "")
                 room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
                 
-                # 💡 검색결과에도 콤마 적용
                 d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
                 r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
                 p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
@@ -707,7 +717,6 @@ elif selected_tab == "📞 오늘의 오피콜":
                 tag = "🔥 [폭파 매물 줍기!]" if is_expired_target else "🎯 타겟"
                 st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
                 
-                # 💡 오피콜 타겟에도 콤마 적용
                 d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
                 r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
                 p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
