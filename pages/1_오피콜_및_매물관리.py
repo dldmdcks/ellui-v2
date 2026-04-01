@@ -125,11 +125,6 @@ def update_token(t_name, amt, reason):
             ws_h.append_row([(datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S'), t_name, amt, int(r.get('보유토큰', 0)) + amt, reason], value_input_option='USER_ENTERED')
             break
 
-def is_managed_building(addr_str):
-    for b_name in MANAGER_BUILDINGS.keys():
-        if b_name.replace(" ","") in addr_str.replace(" ",""): return True
-    return False
-
 all_records = []
 live_records = [] 
 expired_records = [] 
@@ -138,14 +133,12 @@ if len(all_data_raw) > 1:
     for i, r in enumerate(all_data_raw[1:]):
         row_idx_sheet = i + 2
         
-        # 💡 [핵심 방어막] 구글 시트 딜레이를 무시하고, 내가 방금 비공개 처리한 건 즉시 '비공개'로 인식하게 만듦!
         status_val = st.session_state.status_overrides.get(row_idx_sheet, r[25].strip() if len(r)>25 else "정상")
         
         if not has_vip and status_val in ["비공개", "삭제", "잘못됨"]: continue
         
         rp = (r + [""]*28)[:28] + [row_idx_sheet] 
         
-        # 💡 방금 쓴 피드(특이사항)도 구글 시트 딜레이 무시하고 즉각 띄워줌!
         if row_idx_sheet in st.session_state.memo_overrides:
             rp[22] = st.session_state.memo_overrides[row_idx_sheet]
         
@@ -314,7 +307,7 @@ if selected_tab == "🔥 실시간 매물방":
                             if len(curr_hist) > len(old_history): old_history = curr_hist
                             if len(r_row) <= 25 or str(r_row[25]).strip() != "비공개":
                                 ws_data.update_cell(idx_db+1, 26, "비공개")
-                                st.session_state.status_overrides[idx_db+1] = "비공개" # 💡 기존 매물 가려주기
+                                st.session_state.status_overrides[idx_db+1] = "비공개" 
                     
                     now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                     final_memo = f"{old_history}\n👉 [{now_str[:10][2:].replace('-','.')}] 매물방 등록: {n_memo}".strip() if old_history else f"👉 [{now_str[:10][2:].replace('-','.')}] 매물방 등록: {n_memo}"
@@ -376,7 +369,6 @@ if selected_tab == "🔥 실시간 매물방":
                                 ws_data = ss.get_worksheet_by_id(1969836502)
                                 ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 24, now_str) 
                                 
-                                # 💡 로컬 덮어쓰기로 즉각 갱신
                                 st.session_state.memo_overrides[row_idx] = up_memo
                                 
                                 update_token(user_name, 1, f"매물 최신화 ({b_name} {ho_str})")
@@ -392,7 +384,6 @@ if selected_tab == "🔥 실시간 매물방":
                                 ws_data = ss.get_worksheet_by_id(1969836502)
                                 ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 26, "비공개") 
                                 
-                                # 💡 [강제 삭제 방어막] 화면에서 유령 매물을 즉시 날려버림!
                                 st.session_state.status_overrides[row_idx] = "비공개"
                                 
                                 op_live[:] = [x for x in op_live if x[28] != row_idx]
@@ -492,11 +483,11 @@ elif selected_tab == "🔍 전체검색":
                 st.write("---")
 
 # ==========================================
-# 탭 3: 🏢 건물 정보
+# 💡 탭 3: 🏢 건물 정보 (업그레이드된 주소 + 히스토리/수정 기능)
 # ==========================================
 elif selected_tab == "🏢 건물 정보":
     st.title("🏢 건물 비밀수첩")
-    st.write("각 건물의 관리실 번호, 공동현관 및 화장실 비밀번호를 모아두는 곳입니다.")
+    st.write("각 건물의 주소, 관리실 번호, 공동현관 및 화장실 비밀번호를 모아두는 곳입니다.")
     
     try: ws_building = ss.worksheet("건물정보")
     except: ws_building = None
@@ -506,29 +497,94 @@ elif selected_tab == "🏢 건물 정보":
     else:
         with st.expander("➕ 새로운 건물 정보 등록", expanded=False):
             with st.form("add_bldg"):
-                b_name = st.text_input("건물명 (예: 엘루이시티)")
-                b_mgmt = st.text_input("관리실 번호")
-                b_pw1 = st.text_input("1층 현관 비밀번호")
-                b_pw2 = st.text_input("화장실 비밀번호")
+                c_b1, c_b2 = st.columns(2)
+                b_name = c_b1.text_input("건물명* (예: 엘루이시티)")
+                b_addr = c_b2.text_input("주소 (예: 방이동 28-2)")
+                
+                c_b3, c_b4, c_b5 = st.columns(3)
+                b_mgmt = c_b3.text_input("관리실 번호")
+                b_pw1 = c_b4.text_input("1층 현관 비밀번호")
+                b_pw2 = c_b5.text_input("화장실 비밀번호")
+                
                 b_note = st.text_area("기타 참고사항")
+                
                 if st.form_submit_button("등록"):
                     if not b_name: st.error("건물명은 필수입니다.")
                     else:
-                        ws_building.append_row([b_name, b_mgmt, b_pw1, b_pw2, user_name, today_shift, b_note], value_input_option='USER_ENTERED')
+                        now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                        history_str = f"👉 [{now_str[:16]}] {user_name} 최초 등록"
+                        
+                        # 데이터 컬럼 순서: 0:이름, 1:관리실, 2:1층, 3:화장실, 4:수정자, 5:수정일, 6:비고, 7:주소, 8:히스토리
+                        new_row = [b_name, b_mgmt, b_pw1, b_pw2, user_name, now_str, b_note, b_addr, history_str]
+                        ws_building.append_row(new_row, value_input_option='USER_ENTERED')
                         st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
                         
         st.write("---")
-        search_bldg = st.text_input("🔍 건물명 검색 (비워두면 전체 표시)")
+        search_bldg = st.text_input("🔍 건물명 또는 주소 검색 (비워두면 전체 표시)")
         
         has_data = False
-        for r in reversed(bldg_all_values):
-            if not r or r[0] == "건물명": continue
-            if len(r) < 2: continue
-            if search_bldg and search_bldg not in r[0]: continue
+        
+        # 💡 시트에서 정확한 행 번호를 찾아 업데이트하기 위해 enumerate 사용
+        for i, r in reversed(list(enumerate(bldg_all_values))):
+            if i == 0 or not r or r[0] == "건물명": continue # 첫 줄(헤더)은 건너뜀
+            if len(r) < 1: continue
+            
+            sheet_row_idx = i + 1 # 구글 시트의 실제 행 번호 (1-based)
+            
+            name_val = str(r[0]).strip()
+            mgmt_val = str(r[1]).strip() if len(r) > 1 else ""
+            pw1_val = str(r[2]).strip() if len(r) > 2 else ""
+            pw2_val = str(r[3]).strip() if len(r) > 3 else ""
+            updater_val = str(r[4]).strip() if len(r) > 4 else ""
+            date_val = str(r[5]).strip() if len(r) > 5 else ""
+            note_val = str(r[6]).strip() if len(r) > 6 else ""
+            addr_val = str(r[7]).strip() if len(r) > 7 else ""
+            hist_val = str(r[8]).strip() if len(r) > 8 else ""
+            
+            if search_bldg and search_bldg not in name_val and search_bldg not in addr_val: continue
             
             has_data = True
-            st.markdown(f"### 📍 {r[0]}")
-            st.info(f"**📞 관리실:** {r[1]} | **🔑 1층 비번:** {r[2] if len(r)>2 else ''} | **🚽 화장실:** {r[3] if len(r)>3 else ''}\n\n**📝 비고:** {r[6] if len(r)>6 else ''} \n\n*(작성: {r[4] if len(r)>4 else ''})*")
+            
+            st.markdown(f"### 📍 {name_val} <span style='font-size:0.6em; color:gray;'>{addr_val}</span>", unsafe_allow_html=True)
+            st.info(f"**📞 관리실:** {mgmt_val} | **🔑 1층 비번:** {pw1_val} | **🚽 화장실:** {pw2_val}\n\n**📝 비고:** {note_val} \n\n*(최근 업데이트: {date_val} by {updater_val})*")
+            
+            # 💡 [핵심] 히스토리 확인 및 수정 기능 탑재
+            with st.expander("✏️ 정보 수정 및 히스토리 보기"):
+                if hist_val:
+                    st.caption("📜 **수정 히스토리**")
+                    st.code(hist_val)
+                
+                with st.form(f"edit_bldg_{sheet_row_idx}"):
+                    c_e1, c_e2 = st.columns(2)
+                    e_name = c_e1.text_input("건물명*", value=name_val)
+                    e_addr = c_e2.text_input("주소", value=addr_val)
+                    
+                    c_e3, c_e4, c_e5 = st.columns(3)
+                    e_mgmt = c_e3.text_input("관리실 번호", value=mgmt_val)
+                    e_pw1 = c_e4.text_input("1층 현관 비밀번호", value=pw1_val)
+                    e_pw2 = c_e5.text_input("화장실 비밀번호", value=pw2_val)
+                    
+                    e_note = st.text_area("기타 참고사항", value=note_val)
+                    
+                    if st.form_submit_button("💾 수정 내용 저장하기", type="primary"):
+                        if not e_name: st.error("건물명은 필수입니다.")
+                        else:
+                            now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                            new_hist = f"👉 [{now_str[:16]}] {user_name} 정보 수정\n{hist_val}"
+                            
+                            # 구글 시트에 개별 셀 업데이트
+                            ws_building.update_cell(sheet_row_idx, 1, e_name)
+                            ws_building.update_cell(sheet_row_idx, 2, e_mgmt)
+                            ws_building.update_cell(sheet_row_idx, 3, e_pw1)
+                            ws_building.update_cell(sheet_row_idx, 4, e_pw2)
+                            ws_building.update_cell(sheet_row_idx, 5, user_name)
+                            ws_building.update_cell(sheet_row_idx, 6, now_str)
+                            ws_building.update_cell(sheet_row_idx, 7, e_note)
+                            ws_building.update_cell(sheet_row_idx, 8, e_addr)
+                            ws_building.update_cell(sheet_row_idx, 9, new_hist)
+                            
+                            st.cache_data.clear()
+                            st.rerun()
             st.write("---")
             
         if not has_data:
