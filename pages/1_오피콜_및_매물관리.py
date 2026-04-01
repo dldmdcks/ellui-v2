@@ -6,10 +6,14 @@ import re
 from datetime import datetime, timedelta
 import requests
 
-# 🚨 [보안 및 안전망] 정보가 하나라도 비면 뻗지 말고 즉시 메인으로 돌려보냄! (완벽 방어)
+# 🚨 [보안 및 안전망] 정보가 하나라도 비면 뻗지 말고 즉시 메인으로 돌려보냄!
 if not st.session_state.get("connected", False) or not st.session_state.get("user_info"):
     st.switch_page("app.py")
     st.stop()
+
+# 💡 [핵심 방어막] 구글 시트 딜레이(시차)를 무시하고 즉시 반영시키는 로컬 기억장치
+if 'status_overrides' not in st.session_state: st.session_state.status_overrides = {}
+if 'memo_overrides' not in st.session_state: st.session_state.memo_overrides = {}
 
 st.set_page_config(page_title="오피콜 및 매물관리", page_icon="🔍", layout="wide", initial_sidebar_state="expanded")
 
@@ -132,10 +136,18 @@ expired_records = []
 
 if len(all_data_raw) > 1:
     for i, r in enumerate(all_data_raw[1:]):
-        status_val = r[25].strip() if len(r)>25 else "정상"
+        row_idx_sheet = i + 2
+        
+        # 💡 [핵심 방어막] 구글 시트 딜레이를 무시하고, 내가 방금 비공개 처리한 건 즉시 '비공개'로 인식하게 만듦!
+        status_val = st.session_state.status_overrides.get(row_idx_sheet, r[25].strip() if len(r)>25 else "정상")
+        
         if not has_vip and status_val in ["비공개", "삭제", "잘못됨"]: continue
         
-        rp = (r + [""]*28)[:28] + [i + 2] 
+        rp = (r + [""]*28)[:28] + [row_idx_sheet] 
+        
+        # 💡 방금 쓴 피드(특이사항)도 구글 시트 딜레이 무시하고 즉각 띄워줌!
+        if row_idx_sheet in st.session_state.memo_overrides:
+            rp[22] = st.session_state.memo_overrides[row_idx_sheet]
         
         d_day = -1
         try:
@@ -302,6 +314,7 @@ if selected_tab == "🔥 실시간 매물방":
                             if len(curr_hist) > len(old_history): old_history = curr_hist
                             if len(r_row) <= 25 or str(r_row[25]).strip() != "비공개":
                                 ws_data.update_cell(idx_db+1, 26, "비공개")
+                                st.session_state.status_overrides[idx_db+1] = "비공개" # 💡 기존 매물 가려주기
                     
                     now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                     final_memo = f"{old_history}\n👉 [{now_str[:10][2:].replace('-','.')}] 매물방 등록: {n_memo}".strip() if old_history else f"👉 [{now_str[:10][2:].replace('-','.')}] 매물방 등록: {n_memo}"
@@ -362,6 +375,10 @@ if selected_tab == "🔥 실시간 매물방":
                                 up_memo = f"{memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}".strip() if memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {new_memo}"
                                 ws_data = ss.get_worksheet_by_id(1969836502)
                                 ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 24, now_str) 
+                                
+                                # 💡 로컬 덮어쓰기로 즉각 갱신
+                                st.session_state.memo_overrides[row_idx] = up_memo
+                                
                                 update_token(user_name, 1, f"매물 최신화 ({b_name} {ho_str})")
                                 send_kakao_live_room(f"{b_name}/{ho_str}/[갱신] {new_memo}/{user_name}")
                                 st.cache_data.clear(); st.rerun()
@@ -375,10 +392,12 @@ if selected_tab == "🔥 실시간 매물방":
                                 ws_data = ss.get_worksheet_by_id(1969836502)
                                 ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 26, "비공개") 
                                 
+                                # 💡 [강제 삭제 방어막] 화면에서 유령 매물을 즉시 날려버림!
+                                st.session_state.status_overrides[row_idx] = "비공개"
+                                
                                 op_live[:] = [x for x in op_live if x[28] != row_idx]
                                 apt_live[:] = [x for x in apt_live if x[28] != row_idx]
                                 etc_live[:] = [x for x in etc_live if x[28] != row_idx]
-                                live_records[:] = [x for x in live_records if x[28] != row_idx]
                                 
                                 send_kakao_live_room(f"{b_name}/{ho_str} ❌ 내림({drop_reason})/{user_name}")
                                 st.cache_data.clear(); st.rerun()
