@@ -6,10 +6,12 @@ import re
 from datetime import datetime, timedelta
 import requests
 
+# 🚨 [보안 및 안전망] 정보가 하나라도 비면 뻗지 말고 즉시 메인으로 돌려보냄!
 if not st.session_state.get("connected", False) or not st.session_state.get("user_info"):
     st.switch_page("app.py")
     st.stop()
 
+# 💡 [핵심 방어막] 구글 시트 딜레이(시차)를 무시하고 즉시 반영시키는 로컬 기억장치
 if 'status_overrides' not in st.session_state: st.session_state.status_overrides = {}
 if 'memo_overrides' not in st.session_state: st.session_state.memo_overrides = {}
 
@@ -193,9 +195,12 @@ def build_kakao_msg_for_group(group_list, group_title):
         for r in grouped[g_name]:
             ho = f"{r[7]} {r[8]}".strip().replace("동없음 ", "")
             tr_type = str(r[26]); biz_type = str(r[27])
+            
+            # 💡 [핵심] 카톡 워크로 보낼 때 콤마(,) 예쁘게 찍어서 발송!
             dep = int(clean_numeric(r[18])) if clean_numeric(r[18]) else 0
             rent = int(clean_numeric(r[19])) if clean_numeric(r[19]) else 0
-            price_str = f"{dep},{rent}" if rent > 0 else f"{dep}"
+            price_str = f"{dep:,}/{rent:,}" if rent > 0 else f"{dep:,}"
+            
             memo_short = str(r[22]).split('\n')[0][:15] 
             d_val = r[29]
             d_str = f"D-{d_val}" if d_val >= 0 else f"D+{-d_val} 🚨"
@@ -318,7 +323,7 @@ if selected_tab == "🔥 실시간 매물방":
                     
                     ws_data.append_row(new_row, value_input_option='USER_ENTERED')
                     
-                    price_s = f"{n_dep}/{n_rent}" if n_rent and n_rent != "0" else f"{n_dep}"
+                    price_s = f"{int(clean_numeric(n_dep)):,}/{int(clean_numeric(n_rent)):,}" if clean_numeric(n_rent) and n_rent != "0" else f"{int(clean_numeric(n_dep)):,}"
                     n_bu_str = f"-{n_bu}" if n_bu and n_bu != "0" else ""
                     b_s = f"[{n_dong} {n_bon}{n_bu_str}] {n_bldg}".strip() if n_bldg else f"[{n_dong} {n_bon}{n_bu_str}]"
                     
@@ -346,7 +351,11 @@ if selected_tab == "🔥 실시간 매물방":
             addr_key = f"[{dong} {bon}" + (f"-{bu}" if bu and bu != "0" else "") + "]"
             b_name = f"{addr_key} {bldg}".strip() if bldg else addr_key
             ho_str = f"{d_dong} {room}".strip().replace("동없음 ", "")
-            price_str = f"{deposit} / {rent}" if rent and rent != "0" else f"{deposit}"
+            
+            # 💡 [화면 표시 콤마 처리]
+            dep_val = int(clean_numeric(deposit)) if clean_numeric(deposit) else 0
+            rent_val = int(clean_numeric(rent)) if clean_numeric(rent) else 0
+            price_str = f"{dep_val:,} / {rent_val:,}" if rent_val > 0 else f"{dep_val:,}"
             
             d_color = "🟢" if d_day >= 4 else "🔴"
             d_str = f"D-{d_day}" if d_day >= 0 else f"D+{-d_day}🚨"
@@ -473,7 +482,11 @@ elif selected_tab == "🔍 전체검색":
                 if has_vip or user_email in ADMIN_EMAILS or st.session_state.get(uk, False):
                     if st.button("🔓 닫기/열기", key=f"btn_re_{idx}"): st.session_state[tk] = not st.session_state.get(tk, False)
                     if st.session_state.get(tk, False) or has_vip or user_email in ADMIN_EMAILS:
-                        st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**보/월:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+                        # 💡 검색결과에도 콤마 적용
+                        d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
+                        r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
+                        p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
+                        st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                 else:
                     if st.button("🔓 열람 (-1토큰)", key=f"btn_addr_{idx}"):
                         if user_tokens >= 1: update_token(user_name, -1, f"매물 열람 ({addr_str})"); st.session_state[uk] = True; st.session_state[tk] = True; st.cache_data.clear(); st.rerun()
@@ -585,7 +598,7 @@ elif selected_tab == "🏢 건물 정보":
             st.info("아직 등록된 건물 정보가 없거나, 검색 결과가 없습니다.")
 
 # ==========================================
-# 💡 [신규] 탭 4: 👤 소유주검색 (완벽 복구)
+# 탭 4: 👤 소유주검색 
 # ==========================================
 elif selected_tab == "👤 소유주검색":
     if is_locked: 
@@ -612,9 +625,14 @@ elif selected_tab == "👤 소유주검색":
                 addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "") + (f" {row[6]}" if row[6] else "")
                 room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
                 
+                # 💡 검색결과에도 콤마 적용
+                d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
+                r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
+                p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
+                
                 st.markdown(f"### 👤 {row[9]} ({row[10]}) | 📞 {row[11]}")
                 st.markdown(f"**📍 {addr_str} | {room_str}**")
-                st.info(f"**보/월:** {row[18]}/{row[19]} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+                st.info(f"**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                 st.write("---")
 
 # ==========================================
@@ -688,7 +706,13 @@ elif selected_tab == "📞 오늘의 오피콜":
                 
                 tag = "🔥 [폭파 매물 줍기!]" if is_expired_target else "🎯 타겟"
                 st.markdown(f"**{tag} {yongdo_badge} {addr_str} {room_str}**")
-                st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {row[18]}/{row[19]} | **종료일:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+                
+                # 💡 오피콜 타겟에도 콤마 적용
+                d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
+                r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
+                p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
+                
+                st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**기존 보/월:** {p_str} | **종료일:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                 
                 with st.form(f"call_update_{row[28]}"):
                     st.markdown("**📝 통화 결과 입력** (* 표시 항목은 필수입니다)")
