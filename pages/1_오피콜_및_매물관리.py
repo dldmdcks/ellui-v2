@@ -206,11 +206,11 @@ def build_kakao_msg_for_group(group_list, group_title):
             else:
                 end_date_short = end_date[2:] if end_date.startswith("20") else end_date
                 
-            # 💡 [메모 추출 완벽 패치] 시스템이 넣는 '👉 [YY.MM.DD] 신규등록' 같은 날짜 찌꺼기를 통째로 날리고 알맹이만 가져옵니다!
+            # 💡 [메모 길이 확장 패치] 카톡으로 갈 때 최대 40자까지 넉넉하게 보여주기!
             raw_memo = str(r[22])
             clean_memo = re.sub(r'👉 \[\d{2}\.\d{2}\.\d{2}\]\s*(매물방\s*등록:?|신규등록:?)?\s*', ' ', raw_memo)
             clean_memo = clean_memo.replace('\n', ' ').strip()
-            memo_short = clean_memo[:25] # 25자까지 넉넉하게 전송되도록 변경!
+            memo_short = clean_memo[:40]
             
             d_val = r[29]
             d_str = f"D-{d_val}" if d_val >= 0 else f"D+{-d_val} 🚨"
@@ -250,7 +250,6 @@ st.sidebar.page_link("pages/5_경험치북.py", label="경험치북", icon="📖
 if user_email in ADMIN_EMAILS: st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
-# 💡 [신규 등록] 탭 복구 완료!
 tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "🏢 건물 정보", "👤 소유주검색", "📞 오늘의 오피콜", "📝 신규 등록"]
 if has_vip: tab_names.insert(5, "⏰ VIP만기")
 selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="collapsed")
@@ -284,7 +283,9 @@ if selected_tab == "🔥 실시간 매물방":
             else: n_dong = n_dong_sel
             
             c_n1, c_n2, c_n3 = st.columns(3)
-            n_bon, n_bu, n_room = c_n1.text_input("본번", placeholder="28"), c_n2.text_input("부번", placeholder="2"), c_n3.text_input("호실", placeholder="101")
+            n_bon = c_n1.text_input("본번", placeholder="28")
+            n_bu = c_n2.text_input("부번", placeholder="2")
+            n_room = c_n3.text_input("호실", placeholder="101")
             n_bldg = st.text_input("🏢 건물명 (선택사항, 입력 시 가시성 극대화)", placeholder="예: 엘루이시티")
             
             c_t1, c_t2, c_t3 = st.columns(3)
@@ -309,7 +310,7 @@ if selected_tab == "🔥 실시간 매물방":
                         is_duplicate = True; dup_manager = lr[24]; break
                         
                 if is_duplicate: st.error(f"🚨 이미 매물방에 등록되어 살아있는 매물입니다! (담당자: {dup_manager})")
-                elif not n_dong or not n_bon or not n_room: st.error("필수 항목(동, 번지, 호수)을 입력하세요.")
+                elif not n_dong or not n_bon or not n_room: st.error("필수 항목(동, 본번, 호수)을 입력하세요.")
                 else:
                     in_dong, in_bon, in_bu, in_room = str(n_dong).strip(), str(n_bon).strip(), str(n_bu).strip() if str(n_bu).strip() else "0", re.sub(r'[^0-9]', '', str(n_room))
                     old_history = ""
@@ -346,7 +347,7 @@ if selected_tab == "🔥 실시간 매물방":
                     elif n_btype == "아파트": apt_live.append(temp_live_row)
                     else: etc_live.append(temp_live_row)
                     
-                    send_kakao_live_room(f"{b_s}/{n_room}/{n_tr_type} {price_s}/{n_memo[:15]}/{n_biz_type}/{user_name}")
+                    send_kakao_live_room(f"{b_s}/{n_room}/{n_tr_type} {price_s}/{n_memo[:40]}/{n_biz_type}/{user_name}")
                     st.cache_data.clear(); st.success("🎉 매물방 등록 완료!"); st.rerun()
 
     if user_email in ADMIN_EMAILS:
@@ -761,7 +762,7 @@ elif selected_tab == "📞 오늘의 오피콜":
                 st.write("---")
 
 # ==========================================
-# 💡 [신규 부활] 탭 6: 📝 신규 등록 (새로운 매물/DB 추가)
+# 💡 [신규 부활] 탭 6: 📝 신규 등록 (숫자 0 보존 처리)
 # ==========================================
 elif selected_tab == "📝 신규 등록":
     ws_data = ss.get_worksheet_by_id(1969836502)
@@ -783,8 +784,9 @@ elif selected_tab == "📝 신규 등록":
         
         st.write("---")
         c_n1, c_n2, c_n3, c_n4 = st.columns(4)
-        n_bon = c_n1.text_input("번지 (필수)", placeholder="28-2")
-        n_bu = c_n2.text_input("번지 뒤 '동' (없으면 0)", value="0")
+        # 💡 매물방 탭과 동일하게 '본번', '부번' 으로 직관적인 텍스트 변경!
+        n_bon = c_n1.text_input("본번 (필수)", placeholder="28")
+        n_bu = c_n2.text_input("부번 (없으면 0)", value="0")
         n_room = c_n3.text_input("호실 (숫자만)", placeholder="101")
         n_btype = c_n4.selectbox("용도 (필수)", ["아파트", "오피스텔", "빌라", "상가", "다세대", "다가구", "기타"])
         
@@ -802,7 +804,7 @@ elif selected_tab == "📝 신규 등록":
         
         if st.form_submit_button("💾 데이터 등록", type="primary"):
             if not n_bon or not o_name or not n_mangi:
-                st.error("🚨 필수 항목(번지, 임대인 성함, 만기일)을 모두 입력해주세요!")
+                st.error("🚨 필수 항목(본번, 임대인 성함, 만기일)을 모두 입력해주세요!")
             else:
                 now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                 final_memo = f"👉 [{now_str[:10][2:].replace('-','.')}] 신규등록: {n_memo}".strip() if n_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] 신규등록"
@@ -810,13 +812,17 @@ elif selected_tab == "📝 신규 등록":
                 new_row = [""] * 28
                 new_row[0], new_row[1], new_row[2], new_row[3], new_row[4] = n_city, n_gu, n_dong, n_bon, n_bu
                 new_row[6], new_row[7], new_row[8] = "", "동없음", n_room
-                new_row[9], new_row[10], new_row[11] = o_name, o_birth, o_phone
+                
+                # 💡 구글시트가 앞자리 0을 맘대로 지우지 못하도록 문자(') 처리 방어막 씌움!
+                new_row[9] = o_name
+                new_row[10] = f"'{o_birth}" if o_birth else ""
+                new_row[11] = f"'{o_phone}" if o_phone else ""
+                
                 new_row[12], new_row[18], new_row[19] = n_btype, n_dep, n_rent
                 new_row[21], new_row[22], new_row[23], new_row[24], new_row[25] = n_mangi, final_memo, now_str, user_name, "정상"
                 
                 ws_data.append_row(new_row, value_input_option='USER_ENTERED')
                 
-                # 토큰 +3 지급 및 관리자 페이지 연동 로그 기록
                 update_token(user_name, 3, f"신규 매물 등록 ({n_btype})")
                 
                 st.cache_data.clear()
