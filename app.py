@@ -6,10 +6,8 @@ import requests
 from datetime import datetime, timedelta
 import extra_streamlit_components as stx
 
-# 1. 페이지 설정 및 디자인 (사이드바 고정)
 st.set_page_config(page_title="엘루이 업무포털", page_icon="🏢", layout="wide", initial_sidebar_state="expanded")
 
-# 💡 화면에 남는 '이상한 문구(찌꺼기)'를 완전히 투명화해서 지워버리는 코드
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-size: 14px !important; }
@@ -24,10 +22,8 @@ st.markdown("""
 
 ADMIN_EMAILS = ["dldmdcks94@gmail.com", "ktg3582@gmail.com"]
 
-# 💡 [치명적 버그 수정] 공용 메모리(@st.cache_resource) 완.전.삭.제! (개별 격리)
 cookie_manager = stx.CookieManager(key="auth_cookie_manager")
 
-# 2. 구글 API 금고 확인
 try:
     creds_dict = json.loads(st.secrets["credentials_json"])
     token_dict = json.loads(st.secrets["google_token_json"])
@@ -38,13 +34,11 @@ except:
     st.error("❌ 금고 설정(Secrets) 확인 요망!")
     st.stop()
 
-# 💡 빈 상자 미리 준비 (에러 방지)
 if 'connected' not in st.session_state: 
     st.session_state.connected = False
 if 'user_info' not in st.session_state:
     st.session_state.user_info = {}
 
-# 3. 로그인 유지(쿠키) 스캔
 cached_email = cookie_manager.get(cookie="ellui_user_email")
 if cached_email and not st.session_state.connected:
     st.session_state.connected = True
@@ -52,7 +46,6 @@ if cached_email and not st.session_state.connected:
 
 query_params = st.query_params
 
-# 4. 구글 로그인 성공해서 돌아왔을 때의 처리 로직
 if "code" in query_params and not st.session_state.connected:
     res = requests.post("https://oauth2.googleapis.com/token", data={"code": query_params["code"], "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "redirect_uri": REDIRECT_URI, "grant_type": "authorization_code"}).json()
     if "access_token" in res:
@@ -60,8 +53,6 @@ if "code" in query_params and not st.session_state.connected:
         if "email" in user_info:
             st.session_state.connected = True
             st.session_state.user_info = user_info
-            
-            # 💡 [핵심] 브라우저에 30일짜리 쿠키를 굽고, 방해하지 않도록 놔둠 (st.rerun 삭제)
             cookie_manager.set("ellui_user_email", user_info["email"], expires_at=datetime.now() + timedelta(days=30))
             st.query_params.clear()
 
@@ -70,9 +61,6 @@ if not st.session_state.connected:
     st.link_button("🔵 Google 계정으로 로그인", f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=select_account", type="primary", use_container_width=True)
     st.stop()
 
-# =================================---------
-# 5. 시트 데이터 연동 (이 아래는 대시보드 화면입니다)
-# =================================---------
 @st.cache_resource
 def get_ss(): return gspread.authorize(Credentials.from_authorized_user_info(token_dict)).open_by_key('121-C5OIQpOnTtDbgSLgiq_Qdf5WoHhhIpNkRCWy5hKA')
 ss = get_ss()
@@ -88,7 +76,6 @@ staff_records, settings_all_values = fetch_basic_data()
 
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
 
-# 💡 안전망: 이메일 변수 무조건 확보
 user_email = ""
 if "user_info" in st.session_state and isinstance(st.session_state["user_info"], dict):
     user_email = st.session_state["user_info"].get("email", "")
@@ -107,13 +94,11 @@ else:
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 
-# 💡 완벽한 로그아웃 로직
 if st.sidebar.button("로그아웃"): 
     cookie_manager.delete("ellui_user_email")
     st.session_state.connected = False
     st.session_state.user_info = {}
     st.query_params.clear()
-    # 버튼 클릭으로 자동 리렌더링되며, 최상단에서 로그인 창으로 차단됨!
 
 st.sidebar.write("---")
 st.sidebar.markdown("### 🧭 메뉴 이동")
@@ -131,6 +116,12 @@ try: notice_text = settings_all_values[2][1] if len(settings_all_values) > 2 els
 except: notice_text = ""
 try: idpw_text = settings_all_values[3][1] if len(settings_all_values) > 3 else ""
 except: idpw_text = ""
+
+# 💡 [신규] 은행 상담사 데이터 가져오기
+try: bank_data_str = settings_all_values[5][1] if len(settings_all_values) > 5 and len(settings_all_values[5]) > 1 else "[]"
+except: bank_data_str = "[]"
+try: bank_data = json.loads(bank_data_str)
+except: bank_data = []
 
 # ==========================================
 # 🏠 메인 로비 렌더링
@@ -182,3 +173,15 @@ with hc2:
     st.markdown("**🔧 전속 수리업체 [집고 송파동점]**")
     try: st.image("zipgo.jpg", use_container_width=True)
     except: st.warning("zipgo.jpg 이미지를 업로드해주세요.")
+
+# 💡 [신규] 은행 상담사 화면 렌더링
+st.write("---")
+st.subheader("🏦 대출 및 은행 상담사")
+if bank_data and len(bank_data) > 0 and bank_data[0].get("은행명", "") != "":
+    b_cols = st.columns(3)
+    for i, b in enumerate(bank_data):
+        if not str(b.get("은행명","")).strip(): continue
+        with b_cols[i % 3]:
+            st.info(f"**{b.get('은행명','')}** | {b.get('직책','')} **{b.get('성함','')}**\n\n📞 `{b.get('연락처','')}`")
+else:
+    st.caption("등록된 은행 상담사 정보가 없습니다.")
