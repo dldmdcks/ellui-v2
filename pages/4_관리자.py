@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 if "connected" not in st.session_state or not st.session_state.connected:
     st.switch_page("app.py")
 
-st.set_page_config(page_title="최고 관리자 사령실", page_icon="⚙️", layout="wide")
+st.set_page_config(page_title="최고 관리자 사령실", page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -41,7 +41,7 @@ def fetch_basic_data(): return ws_staff.get_all_records(), ws_settings.get_all_v
 staff_records, settings_all_values, history_all_values = fetch_basic_data()
 
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
-user_email = st.session_state.user_info.get("email", "")
+user_email = st.session_state.get("user_info", {}).get("email", "")
 
 if user_email not in ADMIN_EMAILS:
     st.error("🔒 접근 권한이 없습니다. 최고 관리자 전용 페이지입니다.")
@@ -64,17 +64,29 @@ except: idpw_text = ""
 try: target_apt = settings_all_values[4][1] if len(settings_all_values) > 4 and len(settings_all_values[4]) > 1 else ""
 except: target_apt = ""
 
+# 💡 [신규] 은행 상담사 데이터
+try: bank_data_str = settings_all_values[5][1] if len(settings_all_values) > 5 and len(settings_all_values[5]) > 1 else "[]"
+except: bank_data_str = "[]"
+try: bank_data = json.loads(bank_data_str)
+except: bank_data = [{"은행명": "", "성함": "", "직책": "", "연락처": ""}]
+if not bank_data: bank_data = [{"은행명": "", "성함": "", "직책": "", "연락처": ""}]
+
 # --- 🧭 사이드바 ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
-if st.sidebar.button("로그아웃"): st.query_params.clear(); st.session_state.clear(); st.switch_page("app.py")
+if st.sidebar.button("로그아웃"): 
+    st.session_state.connected = False
+    st.session_state.user_info = {}
+    st.query_params.clear()
+    st.switch_page("app.py")
 st.sidebar.write("---")
 
 st.sidebar.markdown("### 🧭 메뉴 이동")
 st.sidebar.page_link("app.py", label="홈", icon="🏠")
-st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물관리", icon="🔍")
-st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약", icon="💰")
+st.sidebar.page_link("pages/1_오피콜_및_매물관리.py", label="매물/DB", icon="🔍")
+st.sidebar.page_link("pages/2_계약보고_시스템.py", label="계약정산", icon="💰")
 st.sidebar.page_link("pages/3_팀장회의.py", label="회의록", icon="🤝")
+st.sidebar.page_link("pages/5_경험치북.py", label="경험치북", icon="📖")
 st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
@@ -112,12 +124,23 @@ with c_set2:
         if st.form_submit_button("💾 저장"):
             ws_settings.update_cell(5, 2, new_target_apt); st.cache_data.clear(); st.success("저장 완료!"); st.rerun()
 
-# 💡 [핵심 추가] 타겟 건물별 만기일 파악률 막대그래프!
+# 💡 [신규] 대출/은행 상담사 관리 UI
+st.write("---")
+st.subheader("🏦 대출/은행 상담사 연락처 관리")
+st.write("홈 화면에 노출될 은행 상담사 명단을 추가/수정/삭제할 수 있습니다. 칸을 선택해서 엑셀처럼 바로 적으시면 됩니다.")
+df_bank = pd.DataFrame(bank_data)
+edited_bank = st.data_editor(df_bank, num_rows="dynamic", use_container_width=True)
+
+if st.button("💾 상담사 연락처 저장", type="primary"):
+    new_bank_str = edited_bank.to_json(orient="records", force_ascii=False)
+    ws_settings.update_cell(6, 2, new_bank_str)
+    st.cache_data.clear()
+    st.success("저장 완료! 홈 화면에 즉시 반영됩니다.")
+    st.rerun()
+
 st.write("---")
 st.subheader("📊 타겟 건물별 만기일(오피콜) 파악 진척도")
-st.write("등록된 타겟 주소에 대해, 연락처가 있는 세대 중 **'만기일'**이 파악된(입력된) 비율을 보여줍니다.")
 
-# 타겟 주소 리스트 합치기
 target_op_list = [a.strip() for a in target_op.split(",") if a.strip()]
 target_apt_list = [a.strip() for a in target_apt.split(",") if a.strip()]
 
@@ -137,10 +160,9 @@ for ta_raw in target_op_list + target_apt_list:
         
         if dong_bon_bu == ta:
             phone = str(r[11]).strip()
-            if "연락처 없음" in phone or not phone: continue # 연락 가능한 세대만 모수(분모)로 잡음
+            if "연락처 없음" in phone or not phone: continue 
             total += 1
             
-            # 만기일 파악 여부 확인 (빈칸이 아니거나 0000.00.00이 아니면 파악한 것으로 간주)
             mangi = str(r[21]).strip()
             if mangi and mangi != "0000.00.00" and mangi != "nan":
                 checked += 1
@@ -184,7 +206,6 @@ for row in history_all_values[1:]:
     if "신규" in reason and "빌라" in reason: stats_dict[t_name]["villa_new"] += 1
 
 st.subheader("🏆 직원 통합 통제 보드 & 기여도 현황")
-st.info("직원들의 'VIP권한', '오늘 진행도', '잔여토큰'을 직접 수정하고 저장할 수 있습니다.")
 
 admin_staff_data = []
 for r in staff_records:
