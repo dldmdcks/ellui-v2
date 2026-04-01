@@ -196,26 +196,25 @@ def build_kakao_msg_for_group(group_list, group_title):
             ho = f"{r[7]} {r[8]}".strip().replace("동없음 ", "")
             tr_type = str(r[26]); biz_type = str(r[27])
             
-            # 💡 [핵심] 카톡 워크로 보낼 때 콤마(,) 예쁘게 찍기
             dep = int(clean_numeric(r[18])) if clean_numeric(r[18]) else 0
             rent = int(clean_numeric(r[19])) if clean_numeric(r[19]) else 0
             price_str = f"{dep:,}/{rent:,}" if rent > 0 else f"{dep:,}"
             
-            # 💡 [핵심] 만기일(입주일) 추출 및 '등록일' 찌꺼기 제거!
             end_date = str(r[21]).strip()
             if end_date == "0000.00.00" or not end_date:
                 end_date_short = "미정"
             else:
                 end_date_short = end_date[2:] if end_date.startswith("20") else end_date
                 
-            raw_memo = str(r[22]).split('\n')[-1] if str(r[22]) else ""
-            clean_memo = re.sub(r'👉 \[\d{2}\.\d{2}\.\d{2}\]\s*(매물방\s*등록:\s*)?', '', raw_memo).strip()
-            memo_short = clean_memo[:15]
+            # 💡 [메모 추출 완벽 패치] 시스템이 넣는 '👉 [YY.MM.DD] 신규등록' 같은 날짜 찌꺼기를 통째로 날리고 알맹이만 가져옵니다!
+            raw_memo = str(r[22])
+            clean_memo = re.sub(r'👉 \[\d{2}\.\d{2}\.\d{2}\]\s*(매물방\s*등록:?|신규등록:?)?\s*', ' ', raw_memo)
+            clean_memo = clean_memo.replace('\n', ' ').strip()
+            memo_short = clean_memo[:25] # 25자까지 넉넉하게 전송되도록 변경!
             
             d_val = r[29]
             d_str = f"D-{d_val}" if d_val >= 0 else f"D+{-d_val} 🚨"
             
-            # 💡 찌꺼기 날짜 대신 '만기 YY.MM.DD' 표출
             memo_part = f"/{memo_short}" if memo_short else ""
             msg += f"{ho}/{tr_type} {price_str}/만기 {end_date_short}{memo_part}/{biz_type}/{r[24]}/{d_str}\n"
         msg += "\n"
@@ -251,8 +250,9 @@ st.sidebar.page_link("pages/5_경험치북.py", label="경험치북", icon="📖
 if user_email in ADMIN_EMAILS: st.sidebar.page_link("pages/4_관리자.py", label="관리자", icon="⚙️")
 st.sidebar.write("---")
 
-tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "🏢 건물 정보", "👤 소유주검색", "📞 오늘의 오피콜"]
-if has_vip: tab_names.append("⏰ VIP만기")
+# 💡 [신규 등록] 탭 복구 완료!
+tab_names = ["🔥 실시간 매물방", "🔍 전체검색", "🏢 건물 정보", "👤 소유주검색", "📞 오늘의 오피콜", "📝 신규 등록"]
+if has_vip: tab_names.insert(5, "⏰ VIP만기")
 selected_tab = st.radio("메뉴", tab_names, horizontal=True, label_visibility="collapsed")
 
 # ==========================================
@@ -263,7 +263,7 @@ if selected_tab == "🔥 실시간 매물방":
     st.write("새로 등록한 매물만 표시되며, 카톡 워크로 연동됩니다.")
     ws_data = ss.get_worksheet_by_id(1969836502)
     
-    with st.expander("➕ [신규 매물 등록] 매물방에 띄우기 (DB 연동)", expanded=False):
+    with st.expander("➕ [신규 매물 등록] 매물방에 띄우기 (기존 DB 연동)", expanded=False):
         reg_type = st.radio("어떤 매물인가요?", ["🏢 일반 오피스텔/아파트", "🏘️ 빌라/상가/기타(관리건물)"], horizontal=True)
         
         with st.form("new_data_form", clear_on_submit=True):
@@ -759,3 +759,66 @@ elif selected_tab == "📞 오늘의 오피콜":
                     if not has_vip: ws_staff.update_cell(staff_row_index, 8, quota_done + 1)
                     st.cache_data.clear(); st.rerun()
                 st.write("---")
+
+# ==========================================
+# 💡 [신규 부활] 탭 6: 📝 신규 등록 (새로운 매물/DB 추가)
+# ==========================================
+elif selected_tab == "📝 신규 등록":
+    ws_data = ss.get_worksheet_by_id(1969836502)
+    st.title("📝 신규 등록 (완료 시 +3 토큰 / +5점)")
+    st.write("새로운 소유주 및 매물 DB를 등록하는 공간입니다. (매물방 노출과는 별개입니다)")
+    
+    with st.form("add_new_db_form", clear_on_submit=True):
+        c_r1, c_r2, c_r3 = st.columns(3)
+        n_city = c_r1.selectbox("시/도", list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") if "서울특별시" in KOREA_REGION_DATA else 0)
+        
+        gu_opts = list(KOREA_REGION_DATA[n_city].keys())
+        if "➕직접 입력" not in gu_opts: gu_opts.append("➕직접 입력")
+        n_gu_sel = c_r2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
+        n_gu = st.text_input("시/군/구 직접 입력") if n_gu_sel == "➕직접 입력" else n_gu_sel
+        
+        dong_opts = KOREA_REGION_DATA[n_city].get(n_gu, []) + ["➕직접 입력"]
+        n_dong_sel = c_r3.selectbox("법정동", dong_opts, index=dong_opts.index("방이동") if "방이동" in dong_opts else 0)
+        n_dong = st.text_input("법정동 직접 입력") if n_dong_sel == "➕직접 입력" else n_dong_sel
+        
+        st.write("---")
+        c_n1, c_n2, c_n3, c_n4 = st.columns(4)
+        n_bon = c_n1.text_input("번지 (필수)", placeholder="28-2")
+        n_bu = c_n2.text_input("번지 뒤 '동' (없으면 0)", value="0")
+        n_room = c_n3.text_input("호실 (숫자만)", placeholder="101")
+        n_btype = c_n4.selectbox("용도 (필수)", ["아파트", "오피스텔", "빌라", "상가", "다세대", "다가구", "기타"])
+        
+        c_o1, c_o2, c_o3 = st.columns(3)
+        o_name = c_o1.text_input("임대인 성함 (필수)")
+        o_birth = c_o2.text_input("생년월일 (숫자만)", placeholder="940101")
+        o_phone = c_o3.text_input("연락처 (숫자만)", placeholder="01012345678")
+        
+        c_p1, c_p2, c_p3 = st.columns(3)
+        n_dep = c_p1.text_input("보증금 (0원 단위. 예: 10000000)")
+        n_rent = c_p2.text_input("월세 (0원 단위)")
+        n_mangi = c_p3.text_input("만기일 (필수 YYYY.MM.DD)", placeholder="2026.04.00")
+        
+        n_memo = st.text_area("특이사항", placeholder="예: 애완가능, 주차가능 등")
+        
+        if st.form_submit_button("💾 데이터 등록", type="primary"):
+            if not n_bon or not o_name or not n_mangi:
+                st.error("🚨 필수 항목(번지, 임대인 성함, 만기일)을 모두 입력해주세요!")
+            else:
+                now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                final_memo = f"👉 [{now_str[:10][2:].replace('-','.')}] 신규등록: {n_memo}".strip() if n_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] 신규등록"
+                
+                new_row = [""] * 28
+                new_row[0], new_row[1], new_row[2], new_row[3], new_row[4] = n_city, n_gu, n_dong, n_bon, n_bu
+                new_row[6], new_row[7], new_row[8] = "", "동없음", n_room
+                new_row[9], new_row[10], new_row[11] = o_name, o_birth, o_phone
+                new_row[12], new_row[18], new_row[19] = n_btype, n_dep, n_rent
+                new_row[21], new_row[22], new_row[23], new_row[24], new_row[25] = n_mangi, final_memo, now_str, user_name, "정상"
+                
+                ws_data.append_row(new_row, value_input_option='USER_ENTERED')
+                
+                # 토큰 +3 지급 및 관리자 페이지 연동 로그 기록
+                update_token(user_name, 3, f"신규 매물 등록 ({n_btype})")
+                
+                st.cache_data.clear()
+                st.success("🎉 신규 DB 등록이 완료되었습니다! (+3 토큰)")
+                st.rerun()
