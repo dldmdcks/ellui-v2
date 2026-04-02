@@ -206,10 +206,9 @@ def build_kakao_msg_for_group(group_list, group_title):
             else:
                 end_date_short = end_date[2:] if end_date.startswith("20") else end_date
                 
-            # 💡 [메모 길이 확장 패치] 카톡으로 갈 때 최대 40자까지 넉넉하게 보여주기!
-            raw_memo = str(r[22])
-            clean_memo = re.sub(r'👉 \[\d{2}\.\d{2}\.\d{2}\]\s*(매물방\s*등록:?|신규등록:?)?\s*', ' ', raw_memo)
-            clean_memo = clean_memo.replace('\n', ' ').strip()
+            # 💡 [핵심 패치] 가장 마지막(최신) 피드만 깔끔하게 추출해서 40자까지 넉넉하게 카톡으로 보냅니다!
+            last_memo = str(r[22]).split('\n')[-1] if str(r[22]) else ""
+            clean_memo = re.sub(r'👉 \[\d{2}\.\d{2}\.\d{2}\]\s*(매물방\s*등록:?|신규등록:?)?\s*', '', last_memo).strip()
             memo_short = clean_memo[:40]
             
             d_val = r[29]
@@ -375,7 +374,10 @@ if selected_tab == "🔥 실시간 매물방":
             
             st.markdown(f"**{b_name} {ho_str}** ({tr_type} {price_str}) {d_color} {d_str}")
             st.write(f"입주: {end_date} | 유형: {biz_type} | 담당: {registrar}")
-            st.caption(f"📝 {memo}")
+            
+            # 💡 웹 화면에서 메모 히스토리가 줄바꿈되어 예쁘게 보이도록 디자인 패치
+            st.markdown(f"<div style='color:gray; font-size:0.85em;'>📝 {str(memo).replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
+            st.write("")
             
             if registrar == user_name or has_vip:
                 c_exp1, c_exp2 = st.columns(2)
@@ -390,6 +392,12 @@ if selected_tab == "🔥 실시간 매물방":
                                 ws_data.update_cell(row_idx, 23, up_memo); ws_data.update_cell(row_idx, 24, now_str) 
                                 
                                 st.session_state.memo_overrides[row_idx] = up_memo
+                                
+                                # 💡 [핵심] 카톡 발송 전에 시스템 내부 리스트의 메모를 방금 쓴 걸로 갈아 끼움!
+                                for lst in (op_live, apt_live, etc_live):
+                                    for item in lst:
+                                        if item[28] == row_idx:
+                                            item[22] = up_memo
                                 
                                 update_token(user_name, 1, f"매물 최신화 ({b_name} {ho_str})")
                                 send_kakao_live_room(f"{b_name}/{ho_str}/[갱신] {new_memo}/{user_name}")
@@ -762,7 +770,7 @@ elif selected_tab == "📞 오늘의 오피콜":
                 st.write("---")
 
 # ==========================================
-# 💡 [신규 부활] 탭 6: 📝 신규 등록 (숫자 0 보존 처리)
+# 탭 6: 📝 신규 등록
 # ==========================================
 elif selected_tab == "📝 신규 등록":
     ws_data = ss.get_worksheet_by_id(1969836502)
@@ -784,7 +792,6 @@ elif selected_tab == "📝 신규 등록":
         
         st.write("---")
         c_n1, c_n2, c_n3, c_n4 = st.columns(4)
-        # 💡 매물방 탭과 동일하게 '본번', '부번' 으로 직관적인 텍스트 변경!
         n_bon = c_n1.text_input("본번 (필수)", placeholder="28")
         n_bu = c_n2.text_input("부번 (없으면 0)", value="0")
         n_room = c_n3.text_input("호실 (숫자만)", placeholder="101")
@@ -813,7 +820,6 @@ elif selected_tab == "📝 신규 등록":
                 new_row[0], new_row[1], new_row[2], new_row[3], new_row[4] = n_city, n_gu, n_dong, n_bon, n_bu
                 new_row[6], new_row[7], new_row[8] = "", "동없음", n_room
                 
-                # 💡 구글시트가 앞자리 0을 맘대로 지우지 못하도록 문자(') 처리 방어막 씌움!
                 new_row[9] = o_name
                 new_row[10] = f"'{o_birth}" if o_birth else ""
                 new_row[11] = f"'{o_phone}" if o_phone else ""
