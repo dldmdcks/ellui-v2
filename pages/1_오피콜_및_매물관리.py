@@ -206,7 +206,6 @@ def build_kakao_msg_for_group(group_list, group_title):
             else:
                 end_date_short = end_date[2:] if end_date.startswith("20") else end_date
                 
-            # 💡 [핵심 패치] 가장 마지막(최신) 피드만 깔끔하게 추출해서 40자까지 넉넉하게 카톡으로 보냅니다!
             last_memo = str(r[22]).split('\n')[-1] if str(r[22]) else ""
             clean_memo = re.sub(r'👉 \[\d{2}\.\d{2}\.\d{2}\]\s*(매물방\s*등록:?|신규등록:?)?\s*', '', last_memo).strip()
             memo_short = clean_memo[:40]
@@ -374,8 +373,6 @@ if selected_tab == "🔥 실시간 매물방":
             
             st.markdown(f"**{b_name} {ho_str}** ({tr_type} {price_str}) {d_color} {d_str}")
             st.write(f"입주: {end_date} | 유형: {biz_type} | 담당: {registrar}")
-            
-            # 💡 웹 화면에서 메모 히스토리가 줄바꿈되어 예쁘게 보이도록 디자인 패치
             st.markdown(f"<div style='color:gray; font-size:0.85em;'>📝 {str(memo).replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
             st.write("")
             
@@ -393,7 +390,6 @@ if selected_tab == "🔥 실시간 매물방":
                                 
                                 st.session_state.memo_overrides[row_idx] = up_memo
                                 
-                                # 💡 [핵심] 카톡 발송 전에 시스템 내부 리스트의 메모를 방금 쓴 걸로 갈아 끼움!
                                 for lst in (op_live, apt_live, etc_live):
                                     for item in lst:
                                         if item[28] == row_idx:
@@ -428,7 +424,7 @@ if selected_tab == "🔥 실시간 매물방":
     if not (op_live or apt_live or etc_live): st.info("현재 확인된 살아있는 매물이 없습니다.")
 
 # ==========================================
-# 탭 2: 🔍 전체검색
+# 💡 [핵심 패치 1 & 2] 탭 2: 🔍 전체검색 (수정 버튼 & 연락처 없음 처리)
 # ==========================================
 elif selected_tab == "🔍 전체검색":
     if is_locked: st.markdown(f"<div class='locked-tab'><h2>🔒 오늘 할당량을 먼저 완수해주세요!</h2><p>할당량({quota_done}/5건) 완료 시 해제</p></div>", unsafe_allow_html=True)
@@ -499,18 +495,71 @@ elif selected_tab == "🔍 전체검색":
                 
                 if m_name and m_name != user_name and not has_vip: st.error(f"🔒 전담 매물"); st.write("---"); continue
 
-                uk, tk = f"unlock_addr_{addr_str}_{room_str}", f"toggle_addr_{idx}"
+                row_idx_sheet = row[28]
+                uk, tk = f"unlock_addr_{row_idx_sheet}", f"toggle_addr_{row_idx_sheet}"
+                
+                # 💡 [핵심] 연락처 유무 판단
+                phone_val = str(row[11]).strip()
+                has_phone = bool(phone_val and "연락처 없음" not in phone_val)
+
                 if has_vip or user_email in ADMIN_EMAILS or st.session_state.get(uk, False):
-                    if st.button("🔓 닫기/열기", key=f"btn_re_{idx}"): st.session_state[tk] = not st.session_state.get(tk, False)
+                    if st.button("🔓 닫기/열기", key=f"btn_re_{row_idx_sheet}"): 
+                        st.session_state[tk] = not st.session_state.get(tk, False)
+                        st.rerun()
+                        
                     if st.session_state.get(tk, False) or has_vip or user_email in ADMIN_EMAILS:
                         d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
                         r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
                         p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
+                        
                         st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+                        
+                        # 💡 [핵심] 열람 후 수정 기능(수정 폼) 추가!
+                        with st.expander("✏️ 정보 수정 및 업데이트"):
+                            with st.form(f"edit_search_{row_idx_sheet}"):
+                                c_u1, c_u2, c_u3 = st.columns(3)
+                                u_dep = c_u1.text_input("보증금", value=str(row[18]))
+                                u_rent = c_u2.text_input("월세", value=str(row[19]))
+                                u_mangi = c_u3.text_input("만기일", value=str(row[21]), placeholder="YYYY.MM.DD")
+                                u_memo = st.text_input("추가 피드", placeholder="새로운 통화 내용 등 추가")
+
+                                if st.form_submit_button("✅ 정보 업데이트"):
+                                    now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                                    old_memo = str(row[22]).strip()
+                                    updated_memo = old_memo
+                                    if u_memo:
+                                        updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}"
+
+                                    ws_data = ss.get_worksheet_by_id(1969836502)
+                                    ws_data.update_cell(row_idx_sheet, 19, u_dep) 
+                                    ws_data.update_cell(row_idx_sheet, 20, u_rent)
+                                    ws_data.update_cell(row_idx_sheet, 22, u_mangi)
+                                    if u_memo:
+                                        ws_data.update_cell(row_idx_sheet, 23, updated_memo)
+                                    ws_data.update_cell(row_idx_sheet, 24, now_str)
+                                    ws_data.update_cell(row_idx_sheet, 25, user_name)
+
+                                    st.cache_data.clear()
+                                    st.success("수정 완료!")
+                                    st.rerun()
+
                 else:
-                    if st.button("🔓 열람 (-1토큰)", key=f"btn_addr_{idx}"):
-                        if user_tokens >= 1: update_token(user_name, -1, f"매물 열람 ({addr_str})"); st.session_state[uk] = True; st.session_state[tk] = True; st.cache_data.clear(); st.rerun()
-                        else: st.error("토큰 부족")
+                    # 💡 [핵심] 연락처가 없으면 토큰 소모 경고 대신 무료 열람 버튼 노출!
+                    btn_text = "🔓 열람 (-1토큰)" if has_phone else "🔓 연락처 없음 (무료 열람)"
+                    if st.button(btn_text, key=f"btn_addr_{row_idx_sheet}"):
+                        if not has_phone:
+                            st.session_state[uk] = True
+                            st.session_state[tk] = True
+                            st.rerun()
+                        else:
+                            if user_tokens >= 1:
+                                update_token(user_name, -1, f"매물 열람 ({addr_str})")
+                                st.session_state[uk] = True
+                                st.session_state[tk] = True
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("토큰 부족")
                 st.write("---")
 
 # ==========================================
@@ -618,7 +667,7 @@ elif selected_tab == "🏢 건물 정보":
             st.info("아직 등록된 건물 정보가 없거나, 검색 결과가 없습니다.")
 
 # ==========================================
-# 탭 4: 👤 소유주검색 
+# 💡 [핵심 패치 3] 탭 4: 👤 소유주검색 (토큰 누수 방어 & 수정 버튼)
 # ==========================================
 elif selected_tab == "👤 소유주검색":
     if is_locked: 
@@ -645,13 +694,74 @@ elif selected_tab == "👤 소유주검색":
                 addr_str = f"{row[0]} {row[1]} {row[2]} {row[3]}" + (f"-{row[4]}" if row[4] and row[4] != "0" else "") + (f" {row[6]}" if row[6] else "")
                 room_str = f"{row[7]} {row[8]}" if row[7] and row[7] != "동없음" else f"{row[8]}"
                 
-                d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
-                r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
-                p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
-                
-                st.markdown(f"### 👤 {row[9]} ({row[10]}) | 📞 {row[11]}")
                 st.markdown(f"**📍 {addr_str} | {room_str}**")
-                st.info(f"**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+                
+                # 💡 [핵심] 전체검색과 동일하게 소유주 검색 결과에도 자물쇠(토큰 잠금) 장착!
+                row_idx_sheet = row[28]
+                uk, tk = f"unlock_owner_{row_idx_sheet}", f"toggle_owner_{row_idx_sheet}"
+                
+                phone_val = str(row[11]).strip()
+                has_phone = bool(phone_val and "연락처 없음" not in phone_val)
+
+                if has_vip or user_email in ADMIN_EMAILS or st.session_state.get(uk, False):
+                    if st.button("🔓 닫기/열기", key=f"btn_re_owner_{row_idx_sheet}"):
+                        st.session_state[tk] = not st.session_state.get(tk, False)
+                        st.rerun()
+                        
+                    if st.session_state.get(tk, False) or has_vip or user_email in ADMIN_EMAILS:
+                        d_val = int(clean_numeric(row[18])) if clean_numeric(row[18]) else 0
+                        r_val = int(clean_numeric(row[19])) if clean_numeric(row[19]) else 0
+                        p_str = f"{d_val:,} / {r_val:,}" if r_val > 0 else f"{d_val:,}"
+                        
+                        st.markdown(f"### 👤 {row[9]} ({row[10]}) | 📞 {row[11]}")
+                        st.info(f"**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
+
+                        # 💡 [핵심] 여기서도 바로 수정할 수 있게 폼 추가!
+                        with st.expander("✏️ 정보 수정 및 업데이트"):
+                            with st.form(f"edit_owner_{row_idx_sheet}"):
+                                c_u1, c_u2, c_u3 = st.columns(3)
+                                u_dep = c_u1.text_input("보증금", value=str(row[18]))
+                                u_rent = c_u2.text_input("월세", value=str(row[19]))
+                                u_mangi = c_u3.text_input("만기일", value=str(row[21]), placeholder="YYYY.MM.DD")
+                                u_memo = st.text_input("추가 피드", placeholder="새로운 통화 내용 등")
+
+                                if st.form_submit_button("✅ 정보 업데이트"):
+                                    now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
+                                    old_memo = str(row[22]).strip()
+                                    updated_memo = old_memo
+                                    if u_memo:
+                                        updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}"
+
+                                    ws_data = ss.get_worksheet_by_id(1969836502)
+                                    ws_data.update_cell(row_idx_sheet, 19, u_dep)
+                                    ws_data.update_cell(row_idx_sheet, 20, u_rent)
+                                    ws_data.update_cell(row_idx_sheet, 22, u_mangi)
+                                    if u_memo:
+                                        ws_data.update_cell(row_idx_sheet, 23, updated_memo)
+                                    ws_data.update_cell(row_idx_sheet, 24, now_str)
+                                    ws_data.update_cell(row_idx_sheet, 25, user_name)
+
+                                    st.cache_data.clear()
+                                    st.success("수정 완료!")
+                                    st.rerun()
+
+                else:
+                    # 💡 [핵심] 연락처가 없으면 무료로 오픈!
+                    btn_text = "🔓 열람 (-1토큰)" if has_phone else "🔓 연락처 없음 (무료 열람)"
+                    if st.button(btn_text, key=f"btn_owner_addr_{row_idx_sheet}"):
+                        if not has_phone:
+                            st.session_state[uk] = True
+                            st.session_state[tk] = True
+                            st.rerun()
+                        else:
+                            if user_tokens >= 1:
+                                update_token(user_name, -1, f"소유주 매물 열람 ({addr_str})")
+                                st.session_state[uk] = True
+                                st.session_state[tk] = True
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("토큰 부족")
                 st.write("---")
 
 # ==========================================
