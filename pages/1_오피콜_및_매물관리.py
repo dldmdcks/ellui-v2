@@ -235,7 +235,6 @@ def send_kakao_live_room(new_highlight_msg=""):
     try: requests.post("https://kakaowork.com/bots/hook/8fadfba4790e40b49281958fd256c431", json={"text": full_msg})
     except: pass
 
-# --- 🧭 사이드바 (완벽 복구) ---
 st.sidebar.markdown(f"### 👤 {user_name}")
 st.sidebar.markdown(f"**보유 토큰:** `{user_tokens} 개`")
 if st.sidebar.button("로그아웃"): 
@@ -519,29 +518,40 @@ elif selected_tab == "🔍 전체검색":
                         
                         st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                         
+                        # 💡 [검색 탭] 정보 수정 및 업데이트에 실거주 체크박스 추가
                         with st.expander("✏️ 정보 수정 및 업데이트"):
                             with st.form(f"edit_search_{row_idx_sheet}"):
                                 c_u1, c_u2, c_u3 = st.columns(3)
                                 u_dep = c_u1.text_input("보증금", value=str(row[18]))
                                 u_rent = c_u2.text_input("월세", value=str(row[19]))
                                 u_mangi = c_u3.text_input("만기일", value=str(row[21]), placeholder="YYYY.MM.DD")
-                                u_memo = st.text_input("추가 피드", placeholder="새로운 통화 내용 등 추가")
+                                
+                                c_m1, c_m2 = st.columns([3, 1])
+                                u_memo = c_m1.text_input("추가 피드", placeholder="새로운 통화 내용 등 추가")
+                                is_owner_living = c_m2.checkbox("실거주(제외)")
 
                                 if st.form_submit_button("✅ 정보 업데이트"):
                                     now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                                     old_memo = str(row[22]).strip()
+                                    
+                                    added_text = u_memo
+                                    if is_owner_living:
+                                        added_text = (added_text + " (실거주 확인)").strip() if added_text else "(실거주 확인)"
+                                    
                                     updated_memo = old_memo
-                                    if u_memo:
-                                        updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}"
+                                    if added_text:
+                                        updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {added_text}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {added_text}"
 
                                     ws_data = ss.get_worksheet_by_id(1969836502)
                                     ws_data.update_cell(row_idx_sheet, 19, u_dep) 
                                     ws_data.update_cell(row_idx_sheet, 20, u_rent)
-                                    ws_data.update_cell(row_idx_sheet, 22, u_mangi)
-                                    if u_memo:
+                                    ws_data.update_cell(row_idx_sheet, 22, u_mangi if not is_owner_living else today_shift.replace('-','.'))
+                                    if added_text:
                                         ws_data.update_cell(row_idx_sheet, 23, updated_memo)
                                     ws_data.update_cell(row_idx_sheet, 24, now_str)
                                     ws_data.update_cell(row_idx_sheet, 25, user_name)
+                                    if is_owner_living:
+                                        ws_data.update_cell(row_idx_sheet, 26, "실거주")
 
                                     st.cache_data.clear()
                                     st.success("수정 완료!")
@@ -718,29 +728,40 @@ elif selected_tab == "👤 소유주검색":
                         st.markdown(f"### 👤 {row[9]} ({row[10]}) | 📞 {row[11]}")
                         st.info(f"**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
 
+                        # 💡 [소유주 검색 탭] 정보 수정 및 업데이트에 실거주 체크박스 추가
                         with st.expander("✏️ 정보 수정 및 업데이트"):
                             with st.form(f"edit_owner_{row_idx_sheet}"):
                                 c_u1, c_u2, c_u3 = st.columns(3)
                                 u_dep = c_u1.text_input("보증금", value=str(row[18]))
                                 u_rent = c_u2.text_input("월세", value=str(row[19]))
                                 u_mangi = c_u3.text_input("만기일", value=str(row[21]), placeholder="YYYY.MM.DD")
-                                u_memo = st.text_input("추가 피드", placeholder="새로운 통화 내용 등")
+                                
+                                c_m1, c_m2 = st.columns([3, 1])
+                                u_memo = c_m1.text_input("추가 피드", placeholder="새로운 통화 내용 등")
+                                is_owner_living = c_m2.checkbox("실거주(제외)")
 
                                 if st.form_submit_button("✅ 정보 업데이트"):
                                     now_str = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y-%m-%d %H:%M:%S')
                                     old_memo = str(row[22]).strip()
+                                    
+                                    added_text = u_memo
+                                    if is_owner_living:
+                                        added_text = (added_text + " (실거주 확인)").strip() if added_text else "(실거주 확인)"
+                                    
                                     updated_memo = old_memo
-                                    if u_memo:
-                                        updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {u_memo}"
+                                    if added_text:
+                                        updated_memo = f"{old_memo}\n👉 [{now_str[:10][2:].replace('-','.')}] {added_text}".strip() if old_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] {added_text}"
 
                                     ws_data = ss.get_worksheet_by_id(1969836502)
                                     ws_data.update_cell(row_idx_sheet, 19, u_dep)
                                     ws_data.update_cell(row_idx_sheet, 20, u_rent)
-                                    ws_data.update_cell(row_idx_sheet, 22, u_mangi)
-                                    if u_memo:
+                                    ws_data.update_cell(row_idx_sheet, 22, u_mangi if not is_owner_living else today_shift.replace('-','.'))
+                                    if added_text:
                                         ws_data.update_cell(row_idx_sheet, 23, updated_memo)
                                     ws_data.update_cell(row_idx_sheet, 24, now_str)
                                     ws_data.update_cell(row_idx_sheet, 25, user_name)
+                                    if is_owner_living:
+                                        ws_data.update_cell(row_idx_sheet, 26, "실거주")
 
                                     st.cache_data.clear()
                                     st.success("수정 완료!")
