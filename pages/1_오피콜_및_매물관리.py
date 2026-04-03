@@ -164,12 +164,20 @@ if len(all_data_raw) > 1:
         for b_name in MANAGER_BUILDINGS.keys():
             if b_name.replace(" ","") in full_addr_check.replace(" ",""): is_managed = True; break
 
-        if is_live_format and status_val not in ["비공개", "삭제", "잘못됨"]:
-            if is_managed or yongdo in ["빌라", "상가", "다세대", "다가구"]: 
-                live_records.append(rp)
-            else:
-                if d_day >= 0: live_records.append(rp)
-                elif d_day < 0 and str(rp[24]).strip(): expired_records.append(rp)
+        # 💡 [핵심 패치] DB 보관용 매물은 매물방(Live)에서 완벽히 제외!
+        if is_live_format and status_val not in ["비공개", "삭제", "잘못됨", "실거주"]:
+            
+            # 상태가 "DB"이거나, 메모에 "신규등록"이 있고 "매물방" 등록이 안 된 과거 데이터는 숨김 처리
+            is_db_only = (status_val == "DB") or (status_val == "정상" and "신규등록" in str(rp[22]) and "매물방" not in str(rp[22]))
+            
+            if not is_db_only:
+                if is_managed or yongdo in ["빌라", "상가", "다세대", "다가구"]: 
+                    live_records.append(rp)
+                else:
+                    if d_day >= 0: live_records.append(rp)
+            
+            if d_day < 0 and str(rp[24]).strip(): 
+                expired_records.append(rp)
                 
         all_records.append(rp)
 
@@ -518,7 +526,6 @@ elif selected_tab == "🔍 전체검색":
                         
                         st.info(f"**소유주:** {row[9]}({row[10]}) | **연락처:** {row[11]}\n\n**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
                         
-                        # 💡 [검색 탭] 정보 수정 및 업데이트에 실거주 체크박스 추가
                         with st.expander("✏️ 정보 수정 및 업데이트"):
                             with st.form(f"edit_search_{row_idx_sheet}"):
                                 c_u1, c_u2, c_u3 = st.columns(3)
@@ -728,7 +735,6 @@ elif selected_tab == "👤 소유주검색":
                         st.markdown(f"### 👤 {row[9]} ({row[10]}) | 📞 {row[11]}")
                         st.info(f"**보/월:** {p_str} | **만기:** {row[21]}\n\n**히스토리:**\n{row[22]}")
 
-                        # 💡 [소유주 검색 탭] 정보 수정 및 업데이트에 실거주 체크박스 추가
                         with st.expander("✏️ 정보 수정 및 업데이트"):
                             with st.form(f"edit_owner_{row_idx_sheet}"):
                                 c_u1, c_u2, c_u3 = st.columns(3)
@@ -901,12 +907,12 @@ elif selected_tab == "📞 오늘의 오피콜":
                 st.write("---")
 
 # ==========================================
-# 탭 6: 📝 신규 등록
+# 💡 탭 6: 📝 신규 등록 (DB 전용 저장)
 # ==========================================
 elif selected_tab == "📝 신규 등록":
     ws_data = ss.get_worksheet_by_id(1969836502)
-    st.title("📝 신규 등록 (완료 시 +3 토큰 / +5점)")
-    st.write("새로운 소유주 및 매물 DB를 등록하는 공간입니다. (매물방 노출과는 별개입니다)")
+    st.title("📝 신규 등록 (마스터 DB 전용)")
+    st.write("새로운 소유주 및 매물 DB를 등록하는 공간입니다. (완료 시 +3 토큰 / +5점) \n\n*※ 이곳에서 등록한 매물은 실시간 매물방(카톡)에 노출되지 않고 DB에만 저장됩니다.*")
     
     with st.form("add_new_db_form", clear_on_submit=True):
         c_r1, c_r2, c_r3 = st.columns(3)
@@ -956,12 +962,14 @@ elif selected_tab == "📝 신규 등록":
                 new_row[11] = f"'{o_phone}" if o_phone else ""
                 
                 new_row[12], new_row[18], new_row[19] = n_btype, n_dep, n_rent
-                new_row[21], new_row[22], new_row[23], new_row[24], new_row[25] = n_mangi, final_memo, now_str, user_name, "정상"
+                
+                # 💡 [핵심] 신규 등록은 상태를 "DB"로 저장하여 매물방에서 완벽 차단!
+                new_row[21], new_row[22], new_row[23], new_row[24], new_row[25] = n_mangi, final_memo, now_str, user_name, "DB"
                 
                 ws_data.append_row(new_row, value_input_option='USER_ENTERED')
                 
                 update_token(user_name, 3, f"신규 매물 등록 ({n_btype})")
                 
                 st.cache_data.clear()
-                st.success("🎉 신규 DB 등록이 완료되었습니다! (+3 토큰)")
+                st.success("🎉 마스터 DB에 안전하게 등록되었습니다! (+3 토큰)")
                 st.rerun()
