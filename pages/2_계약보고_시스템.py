@@ -48,7 +48,10 @@ except: pass
 def fetch_contract_data(): return ws_data.get_all_values(), ws_staff.get_all_records(), ws_contract.get_all_values()
 all_data_raw, staff_records, contract_all_values = fetch_contract_data()
 
+# ✨ 수정 1: 이메일 키와 이름 키를 각각 가진 두 개의 딕셔너리 생성
 staff_dict = {str(r['이메일']).strip(): r for r in staff_records}
+staff_dict_by_name = {str(r['이름']).strip(): r for r in staff_records} # 대시보드 연동용 이름 딕셔너리 추가
+
 user_email = st.session_state.user_info.get("email", "")
 
 now_kst = datetime.utcnow() + timedelta(hours=9)
@@ -150,7 +153,6 @@ if selected_tab == "✅ 계약 컨펌 요청":
                 msg += f"특이사항 : {special_notes}\n\n📢 (확인 후 등기/건축물대장을 톡방에 첨부해주세요!)"
                 
                 try:
-                    # 💡 등기컨펌방 전용 웹훅으로 변경 완료!
                     res = requests.post("https://kakaowork.com/bots/hook/9895263a94b2468688afdf5f5858106d", json={"text": msg})
                     if res.status_code == 200:
                         st.success("✅ 카카오워크 등기컨펌방으로 전송되었습니다! 아래에 등기부등본을 톡방에 첨부해주세요.")
@@ -263,7 +265,6 @@ elif selected_tab == "✍️ 신규 계약 보고":
 
                 try:
                     msg_text = f"[📝 신규 계약보고] {deal_type}\n담당자 : {user_name}\n주소 : {cr_sido} {cr_gu} {dong} {bunji}번지{' '+sub_dong+'동' if sub_dong else ''} {r_ho}\n종류 : {b_type}\n보증금 : {int(deposit):,}원\n월세 : {int(rent):,}원\n잔금일 : {move_in}\n만기일 : {move_out}\n특이사항 : {memo}"
-                    # 💡 계약보고방 전용 웹훅으로 변경 완료!
                     res = requests.post("https://kakaowork.com/bots/hook/92f130bf0ad84839a15ea8337642815a", json={"text": msg_text})
                     if res.status_code == 200: st.balloons()
                 except Exception as e: st.error(f"⚠️ 카카오워크 전송 에러: {e}")
@@ -273,11 +274,17 @@ elif selected_tab == "✍️ 신규 계약 보고":
 # ==========================================
 elif selected_tab == "💰 내 정산":
     st.subheader(f"💰 {user_name}님의 계약 및 정산 관리")
-    my_contracts = [r for r in contract_records if len(r) > 1 and r[1] == user_name]
+    
+    # ✨ 수정 2: DB 덮어쓰기 오류 방지를 위해, 구글 시트의 "실제 행(Row) 번호"를 같이 저장하여 추적
+    my_contracts = []
+    for i, r in enumerate(contract_records):
+        if len(r) > 1 and r[1] == user_name:
+            my_contracts.append((i + 2, r))  # i+2 는 구글 시트의 실제 행 번호 (헤더 제외하므로)
+            
     my_contracts.reverse() 
     
     expected_salary = 0
-    for row in my_contracts:
+    for real_row_idx, row in my_contracts:
         rp = (row + [""]*27)[:27]
         if rp[23] != "O":
             fee_val = int(re.sub(r'[^0-9]', '', str(rp[19]))) if re.sub(r'[^0-9]', '', str(rp[19])) else 0
@@ -292,7 +299,7 @@ elif selected_tab == "💰 내 정산":
     
     if not my_contracts: st.info("아직 보고하신 계약건이 없습니다.")
     else:
-        for idx, row in enumerate(my_contracts):
+        for idx, (real_row_idx, row) in enumerate(my_contracts):
             rp = (row + [""]*27)[:27] 
             c_date, d_type = str(rp[0])[:10], str(rp[2])
             c_dong, c_bon, c_bu, c_room = str(rp[5]), str(rp[6]), str(rp[7]), str(rp[9])
@@ -323,9 +330,12 @@ elif selected_tab == "💰 내 정산":
                     new_note = st.text_input("정산 특이사항", value=str(rp[24]))
                     
                     if st.form_submit_button("💾 금액/수단 저장", disabled=is_locked_data):
-                        t_idx = len(contract_all_values) - idx 
-                        ws_contract.update_cell(t_idx, 20, new_fee); ws_contract.update_cell(t_idx, 21, new_method); ws_contract.update_cell(t_idx, 25, new_note); ws_contract.update_cell(t_idx, 26, new_depositor)
-                        if new_real_phone: ws_contract.update_cell(t_idx, 18, f"'{new_real_phone}")
+                        # ✨ 수정 3: 계산된 실제 시트 행(real_row_idx)에 업데이트 하도록 완전 변경
+                        ws_contract.update_cell(real_row_idx, 20, new_fee)
+                        ws_contract.update_cell(real_row_idx, 21, new_method)
+                        ws_contract.update_cell(real_row_idx, 25, new_note)
+                        ws_contract.update_cell(real_row_idx, 26, new_depositor)
+                        if new_real_phone: ws_contract.update_cell(real_row_idx, 18, f"'{new_real_phone}")
                         st.session_state[exp_key] = True 
                         st.cache_data.clear(); st.rerun()
                 
@@ -347,10 +357,10 @@ elif selected_tab == "💰 내 정산":
                             else:
                                 msg = f"💌 [현금영수증 발행 요청]\n담당자 : {user_name}\n주소 : {c_addr} [{d_type}]\n금액 : {int(new_fee):,}원\n\n[👤 발급 정보]\n- 이름 : {biz_name}\n- 번호 : {biz_num}"
                             try:
-                                # 💡 계산서방 전용 웹훅으로 변경 완료!
                                 res = requests.post("https://kakaowork.com/bots/hook/22a2af5a83a4415ea19dd900cf81f799", json={"text": msg})
                                 if res.status_code == 200:
-                                    ws_contract.update_cell(len(contract_all_values) - idx, 22, f"{req_type} 요청완료") 
+                                    # ✨ 수정 4: 증빙 요청 상태 업데이트도 실제 행(real_row_idx)에 반영
+                                    ws_contract.update_cell(real_row_idx, 22, f"{req_type} 요청완료") 
                                     st.session_state[exp_key] = True
                                     st.cache_data.clear(); st.rerun()
                             except Exception as e: st.error(f"⚠️ 카카오워크 전송 에러: {e}")
@@ -370,7 +380,9 @@ elif selected_tab == "👑 전사 대시보드":
         
         fee = int(str(rp[19]).replace(",","").replace("원","").strip()) if str(rp[19]).replace(",","").replace("원","").strip().isdigit() else 0
         pmethod = str(rp[20])
-        s_ratio = int(staff_dict[str(rp[1])].get('수수료비율', 60)) if str(rp[1]) in staff_dict else 60
+        
+        # ✨ 수정 5: staff_dict_by_name을 사용하여 정확한 이름 매칭 및 비율(100%) 로드
+        s_ratio = int(staff_dict_by_name[str(rp[1])].get('수수료비율', 60)) if str(rp[1]) in staff_dict_by_name else 60
         
         if fee > 0:
             if pmethod == "현금" and fee < 100000:
