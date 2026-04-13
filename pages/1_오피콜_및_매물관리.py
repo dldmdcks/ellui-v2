@@ -164,10 +164,7 @@ if len(all_data_raw) > 1:
         for b_name in MANAGER_BUILDINGS.keys():
             if b_name.replace(" ","") in full_addr_check.replace(" ",""): is_managed = True; break
 
-        # 💡 [핵심 패치] DB 보관용 매물은 매물방(Live)에서 완벽히 제외!
         if is_live_format and status_val not in ["비공개", "삭제", "잘못됨", "실거주"]:
-            
-            # 상태가 "DB"이거나, 메모에 "신규등록"이 있고 "매물방" 등록이 안 된 과거 데이터는 숨김 처리
             is_db_only = (status_val == "DB") or (status_val == "정상" and "신규등록" in str(rp[22]) and "매물방" not in str(rp[22]))
             
             if not is_db_only:
@@ -276,23 +273,24 @@ if selected_tab == "🔥 실시간 매물방":
     with st.expander("➕ [신규 매물 등록] 매물방에 띄우기 (기존 DB 연동)", expanded=False):
         reg_type = st.radio("어떤 매물인가요?", ["🏢 일반 오피스텔/아파트", "🏘️ 빌라/상가/기타(관리건물)"], horizontal=True)
         
+        # 💡 [버그 픽스] 주소 드롭다운을 Form 바깥으로 빼서 즉시 반응하게 함!
+        c_reg1, c_reg2, c_reg3 = st.columns(3)
+        n_city = c_reg1.selectbox("시/도", list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") if "서울특별시" in KOREA_REGION_DATA else 0, key="live_sido")
+        
+        gu_opts = list(KOREA_REGION_DATA[n_city].keys())
+        if "➕직접 입력" not in gu_opts: gu_opts.append("➕직접 입력")
+        n_gu_sel = c_reg2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0, key="live_gu")
+        
+        if n_gu_sel == "➕직접 입력": n_gu = c_reg2.text_input("시/군/구 직접 입력 (예: 해운대구)", key="live_gu_txt")
+        else: n_gu = n_gu_sel
+        
+        dong_opts = KOREA_REGION_DATA[n_city].get(n_gu, []) + ["➕직접 입력"]
+        n_dong_sel = c_reg3.selectbox("법정동", dong_opts, index=dong_opts.index("방이동") if "방이동" in dong_opts else 0, key="live_dong")
+        
+        if n_dong_sel == "➕직접 입력": n_dong = c_reg3.text_input("법정동 직접 입력 (예: 방이동)", key="live_dong_txt")
+        else: n_dong = n_dong_sel
+        
         with st.form("new_data_form", clear_on_submit=True):
-            c_reg1, c_reg2, c_reg3 = st.columns(3)
-            n_city = c_reg1.selectbox("시/도", list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") if "서울특별시" in KOREA_REGION_DATA else 0)
-            
-            gu_opts = list(KOREA_REGION_DATA[n_city].keys())
-            if "➕직접 입력" not in gu_opts: gu_opts.append("➕직접 입력")
-            n_gu_sel = c_reg2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
-            
-            if n_gu_sel == "➕직접 입력": n_gu = st.text_input("시/군/구 직접 입력 (예: 해운대구)")
-            else: n_gu = n_gu_sel
-            
-            dong_opts = KOREA_REGION_DATA[n_city].get(n_gu, []) + ["➕직접 입력"]
-            n_dong_sel = c_reg3.selectbox("법정동", dong_opts, index=dong_opts.index("방이동") if "방이동" in dong_opts else 0)
-            
-            if n_dong_sel == "➕직접 입력": n_dong = st.text_input("법정동 직접 입력 (예: 방이동)")
-            else: n_dong = n_dong_sel
-            
             c_n1, c_n2, c_n3 = st.columns(3)
             n_bon = c_n1.text_input("본번", placeholder="28")
             n_bu = c_n2.text_input("부번", placeholder="2")
@@ -444,16 +442,17 @@ elif selected_tab == "🔍 전체검색":
     else:
         st.subheader("🔍 엘루이 통합 디테일 검색")
         
+        # 💡 [버그 픽스] 주소 드롭다운을 Form 바깥으로 빼서 즉시 반응하게 함!
+        c_s1, c_s2, c_s3 = st.columns(3)
+        sel_sido = c_s1.selectbox("시/도", ["전체"] + list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시")+1 if "서울특별시" in KOREA_REGION_DATA else 1, key="search_sido")
+        
+        gu_opts = ["전체"] + list(KOREA_REGION_DATA[sel_sido].keys()) if sel_sido != "전체" else ["전체"]
+        sel_sigungu = c_s2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0, key="search_gu")
+        
+        dong_opts = ["전체"] + (KOREA_REGION_DATA[sel_sido][sel_sigungu] if sel_sigungu != "전체" and sel_sido != "전체" else [])
+        sel_dong = c_s3.selectbox("법정동", dong_opts, index=dong_opts.index("방이동") if "방이동" in dong_opts else 0, key="search_dong")
+        
         with st.form("search_addr_form"):
-            c_s1, c_s2, c_s3 = st.columns(3)
-            sel_sido = c_s1.selectbox("시/도", ["전체"] + list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시")+1 if "서울특별시" in KOREA_REGION_DATA else 1)
-            
-            gu_opts = ["전체"] + list(KOREA_REGION_DATA[sel_sido].keys()) if sel_sido != "전체" else ["전체"]
-            sel_sigungu = c_s2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
-            
-            dong_opts = ["전체"] + (KOREA_REGION_DATA[sel_sido][sel_sigungu] if sel_sigungu != "전체" and sel_sido != "전체" else [])
-            sel_dong = c_s3.selectbox("법정동", dong_opts, index=dong_opts.index("방이동") if "방이동" in dong_opts else 0)
-            
             c_f1, c_f2 = st.columns([2, 1])
             b_search = c_f1.text_input("번지/건물명", placeholder="28-2 또는 엘루이")
             r_search = c_f2.text_input("호실", placeholder="101")
@@ -907,26 +906,31 @@ elif selected_tab == "📞 오늘의 오피콜":
                 st.write("---")
 
 # ==========================================
-# 💡 탭 6: 📝 신규 등록 (DB 전용 저장)
+# 💡 탭 6: 📝 신규 등록 (DB 전용 저장 - 주소 드롭다운 버그 픽스)
 # ==========================================
 elif selected_tab == "📝 신규 등록":
     ws_data = ss.get_worksheet_by_id(1969836502)
     st.title("📝 신규 등록 (마스터 DB 전용)")
     st.write("새로운 소유주 및 매물 DB를 등록하는 공간입니다. (완료 시 +3 토큰 / +5점) \n\n*※ 이곳에서 등록한 매물은 실시간 매물방(카톡)에 노출되지 않고 DB에만 저장됩니다.*")
     
+    # 💡 [버그 픽스] 주소 드롭다운을 Form 바깥으로 빼서 즉시 반응하게 함!
+    c_r1, c_r2, c_r3 = st.columns(3)
+    n_city_db = c_r1.selectbox("시/도", list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") if "서울특별시" in KOREA_REGION_DATA else 0, key="db_sido")
+    
+    gu_opts_db = list(KOREA_REGION_DATA[n_city_db].keys())
+    if "➕직접 입력" not in gu_opts_db: gu_opts_db.append("➕직접 입력")
+    n_gu_sel_db = c_r2.selectbox("시/군/구", gu_opts_db, index=gu_opts_db.index("송파구") if "송파구" in gu_opts_db else 0, key="db_gu")
+    
+    if n_gu_sel_db == "➕직접 입력": n_gu_db = c_r2.text_input("시/군/구 직접 입력", key="db_gu_txt")
+    else: n_gu_db = n_gu_sel_db
+    
+    dong_opts_db = KOREA_REGION_DATA[n_city_db].get(n_gu_db, []) + ["➕직접 입력"]
+    n_dong_sel_db = c_r3.selectbox("법정동", dong_opts_db, index=dong_opts_db.index("방이동") if "방이동" in dong_opts_db else 0, key="db_dong")
+    
+    if n_dong_sel_db == "➕직접 입력": n_dong_db = c_r3.text_input("법정동 직접 입력", key="db_dong_txt")
+    else: n_dong_db = n_dong_sel_db
+    
     with st.form("add_new_db_form", clear_on_submit=True):
-        c_r1, c_r2, c_r3 = st.columns(3)
-        n_city = c_r1.selectbox("시/도", list(KOREA_REGION_DATA.keys()), index=list(KOREA_REGION_DATA.keys()).index("서울특별시") if "서울특별시" in KOREA_REGION_DATA else 0)
-        
-        gu_opts = list(KOREA_REGION_DATA[n_city].keys())
-        if "➕직접 입력" not in gu_opts: gu_opts.append("➕직접 입력")
-        n_gu_sel = c_r2.selectbox("시/군/구", gu_opts, index=gu_opts.index("송파구") if "송파구" in gu_opts else 0)
-        n_gu = st.text_input("시/군/구 직접 입력") if n_gu_sel == "➕직접 입력" else n_gu_sel
-        
-        dong_opts = KOREA_REGION_DATA[n_city].get(n_gu, []) + ["➕직접 입력"]
-        n_dong_sel = c_r3.selectbox("법정동", dong_opts, index=dong_opts.index("방이동") if "방이동" in dong_opts else 0)
-        n_dong = st.text_input("법정동 직접 입력") if n_dong_sel == "➕직접 입력" else n_dong_sel
-        
         st.write("---")
         c_n1, c_n2, c_n3, c_n4 = st.columns(4)
         n_bon = c_n1.text_input("본번 (필수)", placeholder="28")
@@ -954,7 +958,7 @@ elif selected_tab == "📝 신규 등록":
                 final_memo = f"👉 [{now_str[:10][2:].replace('-','.')}] 신규등록: {n_memo}".strip() if n_memo else f"👉 [{now_str[:10][2:].replace('-','.')}] 신규등록"
                 
                 new_row = [""] * 28
-                new_row[0], new_row[1], new_row[2], new_row[3], new_row[4] = n_city, n_gu, n_dong, n_bon, n_bu
+                new_row[0], new_row[1], new_row[2], new_row[3], new_row[4] = n_city_db, n_gu_db, n_dong_db, n_bon, n_bu
                 new_row[6], new_row[7], new_row[8] = "", "동없음", n_room
                 
                 new_row[9] = o_name
@@ -962,8 +966,6 @@ elif selected_tab == "📝 신규 등록":
                 new_row[11] = f"'{o_phone}" if o_phone else ""
                 
                 new_row[12], new_row[18], new_row[19] = n_btype, n_dep, n_rent
-                
-                # 💡 [핵심] 신규 등록은 상태를 "DB"로 저장하여 매물방에서 완벽 차단!
                 new_row[21], new_row[22], new_row[23], new_row[24], new_row[25] = n_mangi, final_memo, now_str, user_name, "DB"
                 
                 ws_data.append_row(new_row, value_input_option='USER_ENTERED')
